@@ -28,6 +28,7 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 COPY --from=build /out/ ./
 COPY LICENSE ./
+COPY .env.example ./
 COPY docker/api-entrypoint.sh /usr/local/bin/api-entrypoint.sh
 RUN chmod +x /usr/local/bin/api-entrypoint.sh
 EXPOSE 4000

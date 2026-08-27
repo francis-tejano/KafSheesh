@@ -224,9 +224,10 @@ Packaged stack (UI, API, and a local Kafka broker):
 ```bash
 git clone <this-repo>
 cd kafsheesh
-cp .env.example .env          # set KAFSHEESH_MASTER_KEY before production use
 docker compose up --build -d
 ```
+
+No `.env` is required. Compose and the API image load [`.env.example`](./.env.example) when `.env` is missing. Copy it to `.env` only when you want to override values (set a real `KAFSHEESH_MASTER_KEY` before production use).
 
 | Surface | URL |
 | --- | --- |
@@ -324,7 +325,7 @@ The feed records HTTP requests (except `/api/activity` and `/health`), SSH sessi
 
 ## Environment variables
 
-Copy `.env.example` and export or place values where the API process can read them.
+Copy `.env.example` to `.env` to override defaults, or export the same names in the process environment. `docker compose up` and `docker run` of the API image apply `.env.example` when `.env` is not present. The API container still forces `KAFSHEESH_DATA_DIR=/data`.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
@@ -334,7 +335,7 @@ Copy `.env.example` and export or place values where the API process can read th
 | `KAFSHEESH_TLS_REJECT_UNAUTHORIZED` | `true` | Set `false` only in development if Kafka uses a private CA you have not installed |
 | `KAFSHEESH_WEB_PORT` | `4444` | Host port for the Compose UI (nginx) |
 | `KAFSHEESH_COMPOSE_KAFKA_HOST` | unset | If set (Compose uses `kafka`), rewrite `localhost` / `127.0.0.1` brokers to that hostname |
-| `KAFSHEESH_DISABLE_DESTRUCTIVE` | `false` | Set `true` / `1` / `yes` / `on` to block create/delete topic, produce, offset reset, delete group, schema register/delete, and delete cluster. Browse, connect, and cluster edit stay available. The API enforces this; the UI hides those actions. |
+| `KAFSHEESH_DISABLE_DESTRUCTIVE` | `false` in a bare API process; `true` in `.env.example` (used by Compose / `docker run` when `.env` is absent) | Set `true` / `1` / `yes` / `on` to block create/delete topic, produce, offset reset, delete group, schema register/delete, and delete cluster. Browse, connect, and cluster edit stay available. The API enforces this; the UI hides those actions. |
 | `CORS_ORIGIN` | empty | Extra comma-separated browser origins allowed by the API |
 
 Compose serves the UI and `/api` from the same origin, so CORS is unused in that mode. For `pnpm dev`, the allow-list includes localhost `:4200` and `:4444`.

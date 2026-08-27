@@ -38,7 +38,13 @@ import type {
 import { ActivityService } from '../activity/activity.service';
 import { open } from '../common/crypto';
 import { SshTunnelService } from '../tunnel/ssh-tunnel.service';
-import { brokerKey, parseBroker, rewriteLoopbackBrokers } from './parse-broker';
+import { browseStartOffset, browseWindowSize } from './browse-window';
+import {
+  brokerKey,
+  isLoopbackHost,
+  parseBroker,
+  rewriteLoopbackBrokers,
+} from './parse-broker';
 
 interface LiveClient {
   config: ClusterConfig;
@@ -72,6 +78,7 @@ export class KafkaManagerService implements OnModuleDestroy {
   private readonly clients = new Map<string, LiveClient>();
   private readonly snapshots = new Map<string, TopicSnapshot>();
   private readonly names = new Map<string, string>();
+  private readonly clusterOps = new Map<string, Promise<unknown>>();
 
   constructor(
     private readonly tunnels: SshTunnelService,
@@ -100,9 +107,37 @@ export class KafkaManagerService implements OnModuleDestroy {
   }
 
   async connect(config: ClusterConfig): Promise<ClusterRuntime> {
+    return this.enqueue(config.id, () => this.connectExclusive(config));
+  }
+
+  async disconnect(id: string): Promise<void> {
+    await this.enqueue(id, () => this.disconnectExclusive(id));
+  }
+
+  private enqueue<T>(id: string, op: () => Promise<T>): Promise<T> {
+    const previous = this.clusterOps.get(id) ?? Promise.resolve();
+    const next = previous.catch(() => undefined).then(op);
+    this.clusterOps.set(id, next);
+    return next;
+  }
+
+  private async connectExclusive(
+    config: ClusterConfig,
+  ): Promise<ClusterRuntime> {
+    const existing = this.clients.get(config.id);
+    if (existing?.status === 'connected' && existing.admin) {
+      this.logger.log(`Reusing open client for ${config.name} (${config.id})`);
+      this.activity.info(
+        'Kafka',
+        `Already connected; keeping tunnel for ${config.name}`,
+        config.id,
+      );
+      return this.runtime(config.id);
+    }
+
     this.logger.log(`Opening Kafka client for ${config.name} (${config.id})`);
     this.activity.info('Kafka', `Opening client for ${config.name}`, config.id);
-    await this.disconnect(config.id);
+    await this.disconnectExclusive(config.id);
     try {
       const kafka = await this.buildClient(config);
       const admin = kafka.admin();
@@ -121,6 +156,16 @@ export class KafkaManagerService implements OnModuleDestroy {
         connectedAt: new Date().toISOString(),
       });
       if (config.tunnel?.enabled) {
+        this.tunnels.onLost(config.id, () => {
+          const live = this.clients.get(config.id);
+          if (live?.status === 'connected') {
+            live.status = 'error';
+            live.lastError = 'SSH tunnel closed';
+            this.logger.warn(
+              `Tunnel lost for ${config.name}; mark disconnected`,
+            );
+          }
+        });
         await this.primeAdvertisedForwards(config.id, admin);
       }
       return this.runtime(config.id);
@@ -143,7 +188,7 @@ export class KafkaManagerService implements OnModuleDestroy {
     }
   }
 
-  async disconnect(id: string): Promise<void> {
+  private async disconnectExclusive(id: string): Promise<void> {
     const live = this.clients.get(id);
     if (live?.admin) {
       await live.admin.disconnect().catch(() => undefined);
@@ -460,74 +505,117 @@ export class KafkaManagerService implements OnModuleDestroy {
         ? true
         : offset.partition === query.partition,
     );
-    if (!partitions.length) {
+    const seeks = partitions.flatMap((partition) => {
+      const start = browseStartOffset({
+        low: partition.low,
+        high: partition.high,
+        direction: query.direction,
+        offset: query.offset,
+        window: browseWindowSize(limit, partitions.length),
+      });
+      return start === null
+        ? []
+        : [{ partition: partition.partition, offset: start }];
+    });
+    if (!seeks.length) {
       return [];
     }
 
+    this.logger.log(
+      `browse ${id} ${query.topic}: ${seeks
+        .map((seek) => `p${seek.partition}@${seek.offset}`)
+        .join(', ')} limit ${limit}`,
+    );
+    this.activity.info('Kafka', `Peek ${query.topic}`, id);
+
     const consumer: Consumer = live.kafka.consumer({
       groupId: `kafsheesh-browse-${randomUUID()}`,
-      sessionTimeout: 15_000,
+      sessionTimeout: 45_000,
+      rebalanceTimeout: 60_000,
+      heartbeatInterval: 5_000,
+      maxWaitTimeInMs: 1_500,
+      allowAutoTopicCreation: false,
+      readUncommitted: true,
     });
     const messages: KafkaMessage[] = [];
     try {
       await consumer.connect();
-      await consumer.subscribe({ topic: query.topic, fromBeginning: true });
+      await consumer.subscribe({
+        topic: query.topic,
+        fromBeginning: query.direction === 'earliest',
+      });
 
       await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(() => resolve(), 8_000);
+        let settled = false;
+        const finish = () => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          clearTimeout(timer);
+          resolve();
+        };
+        const fail = (error: unknown) => {
+          if (settled) {
+            return;
+          }
+          settled = true;
+          clearTimeout(timer);
+          reject(error instanceof Error ? error : new Error(String(error)));
+        };
+        const timer = setTimeout(finish, 25_000);
         let sought = false;
-        consumer
-          .run({
-            eachBatchAutoResolve: true,
-            eachMessage: ({ topic, partition, message }) => {
-              const mapped = this.mapMessage(topic, partition, message);
-              if (this.matchesFilter(mapped, query)) {
-                messages.push(mapped);
-              }
-              if (messages.length >= limit) {
-                clearTimeout(timer);
-                resolve();
-              }
-              return Promise.resolve();
-            },
-          })
-          .catch(reject);
 
         consumer.on(consumer.events.GROUP_JOIN, () => {
           if (sought) {
             return;
           }
           sought = true;
-          for (const partition of partitions) {
-            const high = BigInt(partition.high);
-            const low = BigInt(partition.low);
-            let start = low;
-            if (query.direction === 'offset' && query.offset) {
-              start = BigInt(query.offset);
-            } else if (query.direction !== 'earliest') {
-              const window = BigInt(
-                Math.max(1, Math.ceil(limit / partitions.length)),
-              );
-              start = high > window ? high - window : low;
-            }
-            if (start < low) {
-              start = low;
-            }
-            if (start >= high) {
-              continue;
-            }
+          for (const seek of seeks) {
             consumer.seek({
               topic: query.topic,
-              partition: partition.partition,
-              offset: start.toString(),
+              partition: seek.partition,
+              offset: seek.offset,
             });
           }
         });
+        consumer.on(consumer.events.CRASH, (event) => {
+          fail(event.payload.error);
+        });
+
+        consumer
+          .run({
+            autoCommit: false,
+            eachBatchAutoResolve: true,
+            eachBatch: async (payload) => {
+              for (const message of payload.batch.messages) {
+                const mapped = this.mapMessage(
+                  payload.batch.topic,
+                  payload.batch.partition,
+                  message,
+                );
+                if (this.matchesFilter(mapped, query)) {
+                  messages.push(mapped);
+                }
+                payload.resolveOffset(message.offset);
+                if (messages.length >= limit) {
+                  payload.pause();
+                  finish();
+                  return;
+                }
+              }
+              await payload.heartbeat();
+            },
+          })
+          .catch(fail);
       });
     } finally {
       await consumer.disconnect().catch(() => undefined);
     }
 
+    this.logger.log(
+      `browse ${id} ${query.topic}: returned ${Math.min(messages.length, limit)}`,
+    );
     return messages
       .sort((a, b) => Number(BigInt(b.offset) - BigInt(a.offset)))
       .slice(0, limit);
@@ -824,7 +912,7 @@ export class KafkaManagerService implements OnModuleDestroy {
       return netConnect({ host: '127.0.0.1', port: localPort }, onConnect);
     };
 
-    if (host === '127.0.0.1' || host === 'localhost') {
+    if (isLoopbackHost(host) && this.tunnels.isLiveLocalPort(clusterId, port)) {
       return connectLocal(port);
     }
 

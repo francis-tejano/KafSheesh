@@ -18,7 +18,7 @@ import { formatLocalTime } from '../../core/local-time';
       <div>
         <button type="button" class="btn ghost" (click)="backToTopics()">Back</button>
         <h1 class="mono" style="margin-top:12px">{{ name() }}</h1>
-        <p>Inspect offsets, filter messages, produce, and keep searches.</p>
+        <p>{{ flags.disableDestructive() ? 'Inspect offsets, peek at records, and keep searches.' : 'Inspect offsets, filter messages, produce, and keep searches.' }}</p>
       </div>
     </div>
 
@@ -45,6 +45,60 @@ import { formatLocalTime } from '../../core/local-time';
       </div>
     </div>
 
+    <div class="card table-wrap" style="margin-top:16px">
+      <div class="row" style="justify-content:space-between;margin-bottom:8px">
+        <h3 style="margin:0">Messages</h3>
+        <span class="help">{{ messages().length }} loaded · local time</span>
+      </div>
+      <form (ngSubmit)="loadMessages()">
+        <p class="help">Latest records load when you open the topic. Filters apply on the next load.</p>
+        <div class="grid two">
+          <label><span>Direction</span>
+            <select name="dir" [(ngModel)]="direction">
+              <option value="latest">Latest</option>
+              <option value="earliest">Earliest</option>
+            </select>
+          </label>
+          <label><span>Limit</span><input name="limit" type="number" [(ngModel)]="limit" /></label>
+        </div>
+        <label><span>Regex / text filter</span><input name="q" [(ngModel)]="q" placeholder="optional, e.g. error|timeout" /></label>
+        <label><span>JSON path must exist</span><input name="jp" [(ngModel)]="jsonPath" placeholder="optional, e.g. user.id" /></label>
+        <div class="row">
+          <button class="btn primary" [disabled]="loadingMessages()">
+            {{ loadingMessages() ? 'Loading…' : 'Load messages' }}
+          </button>
+          <button type="button" class="btn ghost" (click)="saveSearch()">Save search</button>
+        </div>
+        @if (searches().length) {
+          <div class="row" style="margin-top:12px">
+            @for (search of searches(); track search.id) {
+              <button type="button" class="pill btnish" (click)="applySearch(search)">{{ search.name }}</button>
+            }
+          </div>
+        }
+      </form>
+      <table style="margin-top:16px">
+        <thead>
+          <tr><th>P</th><th>Offset</th><th>Key</th><th>Value</th><th>Time</th></tr>
+        </thead>
+        <tbody>
+          @for (message of messages(); track message.partition + ':' + message.offset) {
+            <tr>
+              <td>{{ message.partition }}</td>
+              <td class="mono">{{ message.offset }}</td>
+              <td class="mono">{{ message.key }}</td>
+              <td class="mono message-value">{{ message.value }}</td>
+              <td class="help">{{ localTime(message.timestamp, true) }}</td>
+            </tr>
+          } @empty {
+            <tr>
+              <td colspan="5" class="help">{{ emptyPeekText() }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
     @if (topic(); as detail) {
       @if (detail.consumerGroups.length) {
         <div class="card table-wrap" style="margin-top:16px">
@@ -65,74 +119,14 @@ import { formatLocalTime } from '../../core/local-time';
       }
     }
 
-    <div class="grid two" style="margin-top:16px">
-      <form class="card" (ngSubmit)="loadMessages()">
-        <h3>Message browser</h3>
-        <p class="help">Browsing pulls records through the tunnel. Load only when you need them.</p>
-        <div class="grid two">
-          <label><span>Direction</span>
-            <select name="dir" [(ngModel)]="direction">
-              <option value="latest">Latest</option>
-              <option value="earliest">Earliest</option>
-            </select>
-          </label>
-          <label><span>Limit</span><input name="limit" type="number" [(ngModel)]="limit" /></label>
-        </div>
-        <label><span>Regex / text filter</span><input name="q" [(ngModel)]="q" placeholder="error|timeout" /></label>
-        <label><span>JSON path must exist</span><input name="jp" [(ngModel)]="jsonPath" placeholder="user.id" /></label>
-        <div class="row">
-          <button class="btn primary" [disabled]="loadingMessages()">
-            {{ loadingMessages() ? 'Loading…' : 'Load messages' }}
-          </button>
-          <button type="button" class="btn ghost" (click)="saveSearch()">Save search</button>
-        </div>
-        @if (searches().length) {
-          <div class="row" style="margin-top:12px">
-            @for (search of searches(); track search.id) {
-              <button type="button" class="pill btnish" (click)="applySearch(search)">{{ search.name }}</button>
-            }
-          </div>
-        }
+    @if (!flags.disableDestructive()) {
+      <form class="card" style="margin-top:16px" (ngSubmit)="produce()">
+        <h3>Produce</h3>
+        <label><span>Key</span><input name="key" [(ngModel)]="produceKey" /></label>
+        <label><span>Value</span><textarea name="value" [(ngModel)]="produceValue" required></textarea></label>
+        <button class="btn primary" [disabled]="producing()">{{ producing() ? 'Sending…' : 'Send' }}</button>
       </form>
-
-      @if (!flags.disableDestructive()) {
-        <form class="card" (ngSubmit)="produce()">
-          <h3>Produce</h3>
-          <label><span>Key</span><input name="key" [(ngModel)]="produceKey" /></label>
-          <label><span>Value</span><textarea name="value" [(ngModel)]="produceValue" required></textarea></label>
-          <button class="btn primary" [disabled]="producing()">{{ producing() ? 'Sending…' : 'Send' }}</button>
-        </form>
-      }
-    </div>
-
-    <div class="card table-wrap" style="margin-top:16px">
-      <div class="row" style="justify-content:space-between;margin-bottom:8px">
-        <h3 style="margin:0">Messages</h3>
-        <span class="help">{{ messages().length }} loaded · local time</span>
-      </div>
-      <table>
-        <thead>
-          <tr><th>P</th><th>Offset</th><th>Key</th><th>Value</th><th>Time</th></tr>
-        </thead>
-        <tbody>
-          @for (message of messages(); track message.partition + ':' + message.offset) {
-            <tr>
-              <td>{{ message.partition }}</td>
-              <td class="mono">{{ message.offset }}</td>
-              <td class="mono">{{ message.key }}</td>
-              <td class="mono message-value">{{ message.value }}</td>
-              <td class="help">{{ localTime(message.timestamp, true) }}</td>
-            </tr>
-          } @empty {
-            <tr>
-              <td colspan="5" class="help">
-                {{ loadingMessages() ? 'Fetching through the tunnel…' : 'No messages loaded yet. Choose a filter and load.' }}
-              </td>
-            </tr>
-          }
-        </tbody>
-      </table>
-    </div>
+    }
 
     @if (!flags.disableDestructive()) {
       <div class="card" style="margin-top:16px">
@@ -205,6 +199,21 @@ export class TopicDetailPage {
     this.api.searches(this.id()).subscribe((searches) =>
       this.searches.set(searches.filter((search) => search.topic === this.name())),
     );
+    this.loadMessages();
+  }
+
+  emptyPeekText(): string {
+    if (this.loadingMessages()) {
+      return 'Fetching records…';
+    }
+    if (this.q || this.jsonPath) {
+      return 'No records matched these filters.';
+    }
+    const count = this.topic()?.messageCount;
+    if (count) {
+      return `Topic reports ${count.toLocaleString()} messages, but none were returned. Try Load again.`;
+    }
+    return 'No records in this window.';
   }
 
   pending(value: number | undefined): boolean {
@@ -219,6 +228,9 @@ export class TopicDetailPage {
   }
 
   loadMessages() {
+    if (!this.id() || !this.name()) {
+      return;
+    }
     this.loadingMessages.set(true);
     this.error.set('');
     this.api

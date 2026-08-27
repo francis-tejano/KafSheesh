@@ -22,6 +22,7 @@ interface TunnelSession {
   forwards: Map<string, Forward>;
   connectedAt: Date;
   lastLatencyMs?: number;
+  closing?: boolean;
 }
 
 function hopKey(host: string, port: number): string {
@@ -46,8 +47,23 @@ function authConfig(
 export class SshTunnelService {
   private readonly logger = new Logger(SshTunnelService.name);
   private readonly sessions = new Map<string, TunnelSession>();
+  private readonly lostHandlers = new Map<string, () => void>();
 
   constructor(private readonly activity: ActivityService) {}
+
+  onLost(clusterId: string, handler: () => void) {
+    this.lostHandlers.set(clusterId, handler);
+  }
+
+  isLiveLocalPort(clusterId: string, localPort: number): boolean {
+    const session = this.sessions.get(clusterId);
+    if (!session) {
+      return false;
+    }
+    return [...session.forwards.values()].some(
+      (forward) => forward.localPort === localPort && forward.server.listening,
+    );
+  }
 
   getRuntime(clusterId: string): TunnelRuntime | undefined {
     const session = this.sessions.get(clusterId);
@@ -131,6 +147,8 @@ export class SshTunnelService {
         forwards: new Map(),
         connectedAt: new Date(),
       };
+      leaf.on('close', () => this.handleLeafClosed(clusterId, session));
+      leaf.on('end', () => this.handleLeafClosed(clusterId, session));
       this.sessions.set(clusterId, session);
       this.logger.log(
         `Tunnel ${clusterId} opened via ${hopKey(config.host, config.port)} (port-forward only; no shell probe)`,
@@ -163,8 +181,12 @@ export class SshTunnelService {
     }
     const remote = hopKey(remoteHost, remotePort);
     const existing = session.forwards.get(remote);
-    if (existing) {
+    if (existing?.server.listening) {
       return existing.localPort;
+    }
+    if (existing) {
+      existing.server.close();
+      session.forwards.delete(remote);
     }
 
     const server = createServer((socket) => {
@@ -206,6 +228,8 @@ export class SshTunnelService {
     if (!session) {
       return;
     }
+    session.closing = true;
+    this.lostHandlers.delete(clusterId);
     for (const forward of session.forwards.values()) {
       await new Promise<void>((resolve) =>
         forward.server.close(() => resolve()),
@@ -215,6 +239,16 @@ export class SshTunnelService {
       client.end();
     }
     this.sessions.delete(clusterId);
+  }
+
+  private handleLeafClosed(clusterId: string, session: TunnelSession) {
+    if (session.closing || this.sessions.get(clusterId) !== session) {
+      return;
+    }
+    this.logger.warn(`SSH session lost for ${clusterId}`);
+    this.activity.error('SSH', 'Tunnel closed', clusterId);
+    const lost = this.lostHandlers.get(clusterId);
+    void this.closeSession(clusterId).finally(() => lost?.());
   }
 
   async ping(clusterId: string): Promise<number | undefined> {

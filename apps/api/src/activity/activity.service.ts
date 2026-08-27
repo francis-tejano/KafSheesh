@@ -1,7 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { Observable, Subject } from 'rxjs';
-import type { ActivityEvent, ActivityLevel, ActivityStatus } from '@kafsheesh/shared';
+import type {
+  ActivityEvent,
+  ActivityLevel,
+  ActivityStatus,
+} from '@kafsheesh/shared';
 
 @Injectable()
 export class ActivityService {
@@ -33,7 +37,11 @@ export class ActivityService {
     return this.write('info', source, message, clusterId, 'ongoing');
   }
 
-  finish(id: string, status: Exclude<ActivityStatus, 'ongoing'>, message?: string) {
+  finish(
+    id: string,
+    status: Exclude<ActivityStatus, 'ongoing'>,
+    message?: string,
+  ) {
     const index = this.events.findIndex((event) => event.id === id);
     if (index === -1) {
       return;
@@ -76,7 +84,9 @@ export class ActivityService {
   }
 
   private log(event: ActivityEvent) {
-    const line = event.clusterId ? `${event.message} [${event.clusterId.slice(0, 8)}]` : event.message;
+    const line = event.clusterId
+      ? `${event.message} [${event.clusterId.slice(0, 8)}]`
+      : event.message;
     if (event.level === 'error') {
       this.logger.error(`[${event.source}] ${line}`);
     } else if (event.level === 'warn') {

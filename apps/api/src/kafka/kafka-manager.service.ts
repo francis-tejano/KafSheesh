@@ -54,13 +54,17 @@ interface TopicSnapshot {
   topics: TopicInfo[];
   detail: Map<
     string,
-    Pick<TopicDetail, 'offsets' | 'consumerGroups' | 'consumerLag' | 'messageCount'>
+    Pick<
+      TopicDetail,
+      'offsets' | 'consumerGroups' | 'consumerLag' | 'messageCount'
+    >
   >;
 }
 
 const SNAPSHOT_TTL_MS = 45_000;
 
-const INTERNAL_TOPIC = /^(__(consumer_offsets|transaction_state)|_confluent|_schemas)/;
+const INTERNAL_TOPIC =
+  /^(__(consumer_offsets|transaction_state)|_confluent|_schemas)/;
 
 @Injectable()
 export class KafkaManagerService implements OnModuleDestroy {
@@ -75,7 +79,9 @@ export class KafkaManagerService implements OnModuleDestroy {
   ) {}
 
   async onModuleDestroy() {
-    await Promise.all([...this.clients.keys()].map((id) => this.disconnect(id)));
+    await Promise.all(
+      [...this.clients.keys()].map((id) => this.disconnect(id)),
+    );
   }
 
   runtime(id: string): ClusterRuntime {
@@ -101,7 +107,11 @@ export class KafkaManagerService implements OnModuleDestroy {
       const kafka = await this.buildClient(config);
       const admin = kafka.admin();
       this.logger.log(`Kafka admin.connect() for ${config.name}`);
-      this.activity.info('Kafka', `admin.connect() for ${config.name}`, config.id);
+      this.activity.info(
+        'Kafka',
+        `admin.connect() for ${config.name}`,
+        config.id,
+      );
       await admin.connect();
       this.clients.set(config.id, {
         config,
@@ -117,7 +127,11 @@ export class KafkaManagerService implements OnModuleDestroy {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error(`Kafka connect failed for ${config.name}: ${message}`);
-      this.activity.error('Kafka', `Connect failed for ${config.name}: ${message}`, config.id);
+      this.activity.error(
+        'Kafka',
+        `Connect failed for ${config.name}: ${message}`,
+        config.id,
+      );
       this.clients.set(config.id, {
         config,
         kafka: null as unknown as Kafka,
@@ -145,7 +159,11 @@ export class KafkaManagerService implements OnModuleDestroy {
     const remappedBrokers: string[] = [];
     let tunnel: TunnelRuntime | undefined;
 
-    const run = async (id: string, label: string, fn: () => Promise<string | void>) => {
+    const run = async (
+      id: string,
+      label: string,
+      fn: () => Promise<string | void>,
+    ) => {
       const started = Date.now();
       steps.push({ id, label, status: 'running' });
       try {
@@ -165,25 +183,33 @@ export class KafkaManagerService implements OnModuleDestroy {
 
     try {
       if (config.tunnel?.enabled) {
-        await run('ssh', `SSH to ${config.tunnel.host}:${config.tunnel.port}`, async () => {
-          tunnel = await this.tunnels.openSession(config.id, config.tunnel!);
-          return `connected${tunnel.latencyMs ? ` (${tunnel.latencyMs}ms)` : ''}`;
-        });
+        await run(
+          'ssh',
+          `SSH to ${config.tunnel.host}:${config.tunnel.port}`,
+          async () => {
+            tunnel = await this.tunnels.openSession(config.id, config.tunnel!);
+            return `connected${tunnel.latencyMs ? ` (${tunnel.latencyMs}ms)` : ''}`;
+          },
+        );
         const remotes = config.tunnel.remoteBrokers?.length
           ? config.tunnel.remoteBrokers
           : config.brokers;
-        await run('forward', 'Open local forwards to Kafka brokers', async () => {
-          for (const broker of remotes) {
-            const parsed = parseBroker(broker);
-            const localPort = await this.tunnels.ensureForward(
-              config.id,
-              parsed.host,
-              parsed.port,
-            );
-            remappedBrokers.push(`127.0.0.1:${localPort} → ${broker}`);
-          }
-          return remappedBrokers.join(', ');
-        });
+        await run(
+          'forward',
+          'Open local forwards to Kafka brokers',
+          async () => {
+            for (const broker of remotes) {
+              const parsed = parseBroker(broker);
+              const localPort = await this.tunnels.ensureForward(
+                config.id,
+                parsed.host,
+                parsed.port,
+              );
+              remappedBrokers.push(`127.0.0.1:${localPort} → ${broker}`);
+            }
+            return remappedBrokers.join(', ');
+          },
+        );
       }
 
       await run('kafka', 'Fetch Kafka cluster metadata', async () => {
@@ -213,10 +239,7 @@ export class KafkaManagerService implements OnModuleDestroy {
 
       if (config.schemaRegistry?.url) {
         await run('schema', 'Reach Schema Registry', async () => {
-          const subjects = await this.fetchJson<string[]>(
-            config,
-            '/subjects',
-          );
+          const subjects = await this.fetchJson<string[]>(config, '/subjects');
           return `${subjects.length} subject(s)`;
         });
       }
@@ -262,13 +285,19 @@ export class KafkaManagerService implements OnModuleDestroy {
     const started = Date.now();
     const { admin } = this.require(id);
     this.logger.log(`overview ${id}: describe cluster + topics + group count`);
-    this.activity.info('Kafka', 'Loading overview (cluster + topics + group count)', id);
+    this.activity.info(
+      'Kafka',
+      'Loading overview (cluster + topics + group count)',
+      id,
+    );
     const [cluster, topics, groups] = await Promise.all([
       admin.describeCluster(),
       admin.fetchTopicMetadata(),
       admin.listGroups(),
     ]);
-    const topicInfos = topics.topics.filter((topic) => !INTERNAL_TOPIC.test(topic.name));
+    const topicInfos = topics.topics.filter(
+      (topic) => !INTERNAL_TOPIC.test(topic.name),
+    );
     let underReplicated = 0;
     let partitionCount = 0;
     for (const topic of topicInfos) {
@@ -324,12 +353,18 @@ export class KafkaManagerService implements OnModuleDestroy {
     }));
   }
 
-  async listTopics(id: string, options: { stats?: boolean } = {}): Promise<TopicInfo[]> {
+  async listTopics(
+    id: string,
+    options: { stats?: boolean } = {},
+  ): Promise<TopicInfo[]> {
     const cached = this.freshSnapshot(id);
     if (options.stats && cached) {
       return cached.topics;
     }
-    const topics = cached && !options.stats ? this.stripStats(cached.topics) : await this.fetchTopicList(id);
+    const topics =
+      cached && !options.stats
+        ? this.stripStats(cached.topics)
+        : await this.fetchTopicList(id);
     if (!options.stats) {
       return topics;
     }
@@ -356,15 +391,24 @@ export class KafkaManagerService implements OnModuleDestroy {
     if (extra) {
       return { ...topic, configs: configMap, ...extra };
     }
-    const offsets = await this.fetchTopicWatermarks(admin, name, topic.partitions.length);
+    const offsets = await this.fetchTopicWatermarks(
+      admin,
+      name,
+      topic.partitions.length,
+    );
     const mappedOffsets = offsets.map((offset) => ({
       partitionId: offset.partition,
       low: offset.low,
       high: offset.high,
     }));
-    const { consumerGroups, consumerLag } = await this.lagForTopic(admin, name, offsets);
+    const { consumerGroups, consumerLag } = await this.lagForTopic(
+      admin,
+      name,
+      offsets,
+    );
     const messageCount = offsets.reduce(
-      (sum, offset) => sum + Math.max(0, Number(offset.high) - Number(offset.low)),
+      (sum, offset) =>
+        sum + Math.max(0, Number(offset.high) - Number(offset.low)),
       0,
     );
     return {
@@ -386,10 +430,12 @@ export class KafkaManagerService implements OnModuleDestroy {
           topic: input.name,
           numPartitions: input.partitions,
           replicationFactor: input.replicationFactor,
-          configEntries: Object.entries(input.configs ?? {}).map(([name, value]) => ({
-            name,
-            value,
-          })),
+          configEntries: Object.entries(input.configs ?? {}).map(
+            ([name, value]) => ({
+              name,
+              value,
+            }),
+          ),
         },
       ],
     });
@@ -402,12 +448,17 @@ export class KafkaManagerService implements OnModuleDestroy {
     this.snapshots.delete(id);
   }
 
-  async browseMessages(id: string, query: BrowseMessagesQuery): Promise<KafkaMessage[]> {
+  async browseMessages(
+    id: string,
+    query: BrowseMessagesQuery,
+  ): Promise<KafkaMessage[]> {
     const live = this.require(id);
     const limit = Math.min(query.limit ?? 50, 500);
     const offsets = await this.fetchTopicWatermarks(live.admin, query.topic);
     const partitions = offsets.filter((offset) =>
-      query.partition === undefined ? true : offset.partition === query.partition,
+      query.partition === undefined
+        ? true
+        : offset.partition === query.partition,
     );
     if (!partitions.length) {
       return [];
@@ -428,7 +479,7 @@ export class KafkaManagerService implements OnModuleDestroy {
         consumer
           .run({
             eachBatchAutoResolve: true,
-            eachMessage: async ({ topic, partition, message }) => {
+            eachMessage: ({ topic, partition, message }) => {
               const mapped = this.mapMessage(topic, partition, message);
               if (this.matchesFilter(mapped, query)) {
                 messages.push(mapped);
@@ -437,6 +488,7 @@ export class KafkaManagerService implements OnModuleDestroy {
                 clearTimeout(timer);
                 resolve();
               }
+              return Promise.resolve();
             },
           })
           .catch(reject);
@@ -453,7 +505,9 @@ export class KafkaManagerService implements OnModuleDestroy {
             if (query.direction === 'offset' && query.offset) {
               start = BigInt(query.offset);
             } else if (query.direction !== 'earliest') {
-              const window = BigInt(Math.max(1, Math.ceil(limit / partitions.length)));
+              const window = BigInt(
+                Math.max(1, Math.ceil(limit / partitions.length)),
+              );
               start = high > window ? high - window : low;
             }
             if (start < low) {
@@ -511,7 +565,9 @@ export class KafkaManagerService implements OnModuleDestroy {
     if (!listed.groups.length) {
       return [];
     }
-    const described = await admin.describeGroups(listed.groups.map((group) => group.groupId));
+    const described = await admin.describeGroups(
+      listed.groups.map((group) => group.groupId),
+    );
     const results: ConsumerGroupInfo[] = described.groups.map((group) => ({
       groupId: group.groupId,
       state: group.state,
@@ -526,8 +582,14 @@ export class KafkaManagerService implements OnModuleDestroy {
       topics: [],
       offsets: [],
     }));
-    this.logger.log(`groups ${id}: ${results.length} groups described in ${Date.now() - started}ms`);
-    this.activity.info('Kafka', `Groups ready: ${results.length} (${Date.now() - started}ms)`, id);
+    this.logger.log(
+      `groups ${id}: ${results.length} groups described in ${Date.now() - started}ms`,
+    );
+    this.activity.info(
+      'Kafka',
+      `Groups ready: ${results.length} (${Date.now() - started}ms)`,
+      id,
+    );
     return results.sort((a, b) => a.groupId.localeCompare(b.groupId));
   }
 
@@ -535,7 +597,9 @@ export class KafkaManagerService implements OnModuleDestroy {
     const { admin } = this.require(id);
     const topicOffsets = await admin.fetchTopicOffsets(input.topic);
     const partitions = topicOffsets.filter((offset) =>
-      input.partitions?.length ? input.partitions.includes(offset.partition) : true,
+      input.partitions?.length
+        ? input.partitions.includes(offset.partition)
+        : true,
     );
     let offsets: Array<{ partition: number; offset: string }>;
     if (input.strategy === 'earliest') {
@@ -566,7 +630,9 @@ export class KafkaManagerService implements OnModuleDestroy {
       );
       offsets = found
         .filter((partition) =>
-          input.partitions?.length ? input.partitions.includes(partition.partition) : true,
+          input.partitions?.length
+            ? input.partitions.includes(partition.partition)
+            : true,
         )
         .map((partition) => ({
           partition: partition.partition,
@@ -598,7 +664,10 @@ export class KafkaManagerService implements OnModuleDestroy {
           version: number;
           schemaType?: string;
           schema: string;
-        }>(live.config, `/subjects/${encodeURIComponent(subject)}/versions/latest`);
+        }>(
+          live.config,
+          `/subjects/${encodeURIComponent(subject)}/versions/latest`,
+        );
         details.push({
           subject,
           latestVersion: latest.version,
@@ -617,30 +686,45 @@ export class KafkaManagerService implements OnModuleDestroy {
     input: { subject: string; schema: string; schemaType?: string },
   ): Promise<void> {
     const live = this.require(id);
-    await this.fetchJson(live.config, `/subjects/${encodeURIComponent(input.subject)}/versions`, {
-      method: 'POST',
-      body: JSON.stringify({
-        schema: input.schema,
-        schemaType: input.schemaType ?? 'AVRO',
-      }),
-    });
+    await this.fetchJson(
+      live.config,
+      `/subjects/${encodeURIComponent(input.subject)}/versions`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          schema: input.schema,
+          schemaType: input.schemaType ?? 'AVRO',
+        }),
+      },
+    );
   }
 
   async deleteSchema(id: string, subject: string): Promise<void> {
     const live = this.require(id);
-    await this.fetchJson(live.config, `/subjects/${encodeURIComponent(subject)}`, {
-      method: 'DELETE',
-    });
+    await this.fetchJson(
+      live.config,
+      `/subjects/${encodeURIComponent(subject)}`,
+      {
+        method: 'DELETE',
+      },
+    );
   }
 
-  private async buildClient(config: ClusterConfig, persistTunnel = true): Promise<Kafka> {
+  private async buildClient(
+    config: ClusterConfig,
+    persistTunnel = true,
+  ): Promise<Kafka> {
     let brokers = config.brokers;
     if (config.tunnel?.enabled) {
       if (persistTunnel || !this.tunnels.getRuntime(config.id)) {
         await this.tunnels.openSession(config.id, config.tunnel);
       }
       this.logger.log(`SSH is up for ${config.name}; opening local forwards`);
-      this.activity.info('Kafka', `SSH is up; opening local forwards`, config.id);
+      this.activity.info(
+        'Kafka',
+        `SSH is up; opening local forwards`,
+        config.id,
+      );
       const remotes = config.tunnel.remoteBrokers?.length
         ? config.tunnel.remoteBrokers
         : config.brokers;
@@ -665,7 +749,9 @@ export class KafkaManagerService implements OnModuleDestroy {
     } else {
       const remapped = rewriteLoopbackBrokers(brokers);
       if (remapped.join(',') !== brokers.join(',')) {
-        this.logger.log(`Direct Kafka brokers: ${brokers.join(', ')} → ${remapped.join(', ')}`);
+        this.logger.log(
+          `Direct Kafka brokers: ${brokers.join(', ')} → ${remapped.join(', ')}`,
+        );
         this.activity.info(
           'Kafka',
           `localhost remapped to Compose broker ${remapped.join(', ')}`,
@@ -684,16 +770,18 @@ export class KafkaManagerService implements OnModuleDestroy {
       requestTimeout: 20_000,
       connectionTimeout: 12_000,
       logLevel: logLevel.INFO,
-      logCreator: () => ({ namespace, level, log }) => {
-        const line = `[kafkajs ${namespace}] ${log.message}`;
-        if (level === logLevel.ERROR) {
-          this.logger.error(line);
-        } else if (level === logLevel.WARN) {
-          this.logger.warn(line);
-        } else {
-          this.logger.log(line);
-        }
-      },
+      logCreator:
+        () =>
+        ({ namespace, level, log }) => {
+          const line = `[kafkajs ${namespace}] ${log.message}`;
+          if (level === logLevel.ERROR) {
+            this.logger.error(line);
+          } else if (level === logLevel.WARN) {
+            this.logger.warn(line);
+          } else {
+            this.logger.log(line);
+          }
+        },
     };
 
     if (config.sasl) {
@@ -726,7 +814,8 @@ export class KafkaManagerService implements OnModuleDestroy {
             host: '127.0.0.1',
             port: localPort,
             servername: host === '127.0.0.1' ? undefined : host,
-            rejectUnauthorized: process.env.KAFSHEESH_TLS_REJECT_UNAUTHORIZED !== 'false',
+            rejectUnauthorized:
+              process.env.KAFSHEESH_TLS_REJECT_UNAUTHORIZED !== 'false',
             ...(typeof ssl === 'object' ? ssl : {}),
           },
           onConnect,
@@ -774,7 +863,10 @@ export class KafkaManagerService implements OnModuleDestroy {
       timestamp: string;
       key: Buffer | null;
       value: Buffer | null;
-      headers?: Record<string, Buffer | string | (Buffer | string)[] | undefined>;
+      headers?: Record<
+        string,
+        Buffer | string | (Buffer | string)[] | undefined
+      >;
       size?: number;
     },
   ): KafkaMessage {
@@ -799,11 +891,20 @@ export class KafkaManagerService implements OnModuleDestroy {
     };
   }
 
-  private matchesFilter(message: KafkaMessage, query: BrowseMessagesQuery): boolean {
-    if (query.fromTimestamp && Number(message.timestamp) < Date.parse(query.fromTimestamp)) {
+  private matchesFilter(
+    message: KafkaMessage,
+    query: BrowseMessagesQuery,
+  ): boolean {
+    if (
+      query.fromTimestamp &&
+      Number(message.timestamp) < Date.parse(query.fromTimestamp)
+    ) {
       return false;
     }
-    if (query.toTimestamp && Number(message.timestamp) > Date.parse(query.toTimestamp)) {
+    if (
+      query.toTimestamp &&
+      Number(message.timestamp) > Date.parse(query.toTimestamp)
+    ) {
       return false;
     }
     if (query.q) {
@@ -836,7 +937,7 @@ export class KafkaManagerService implements OnModuleDestroy {
     const parts = path.split('.').filter(Boolean);
     let current: unknown = value;
     for (const part of parts) {
-      const match = part.match(/^([^\[\]]+)(?:\[(\d+)\])?$/);
+      const match = part.match(/^([^[\]]+)(?:\[(\d+)\])?$/);
       if (!match || typeof current !== 'object' || current === null) {
         return false;
       }
@@ -858,7 +959,10 @@ export class KafkaManagerService implements OnModuleDestroy {
       return [];
     }
     try {
-      const text = typeof assignment === 'string' ? assignment : assignment.toString('utf8');
+      const text =
+        typeof assignment === 'string'
+          ? assignment
+          : assignment.toString('utf8');
       if (text.includes('topic')) {
         return [{ topic: text, partitions: [] }];
       }
@@ -881,14 +985,21 @@ export class KafkaManagerService implements OnModuleDestroy {
       accept: 'application/vnd.schemaregistry.v1+json, application/json',
       'content-type': 'application/vnd.schemaregistry.v1+json',
     };
-    const username = open(config.schemaRegistry?.username) ?? config.schemaRegistry?.username;
-    const password = open(config.schemaRegistry?.password) ?? config.schemaRegistry?.password;
+    const username =
+      open(config.schemaRegistry?.username) ?? config.schemaRegistry?.username;
+    const password =
+      open(config.schemaRegistry?.password) ?? config.schemaRegistry?.password;
     if (username) {
       headers.authorization = `Basic ${Buffer.from(`${username}:${password ?? ''}`).toString('base64')}`;
     }
-    const response = await fetch(`${base}${path}`, { ...init, headers: { ...headers, ...init?.headers } });
+    const response = await fetch(`${base}${path}`, {
+      ...init,
+      headers: { ...headers, ...init?.headers },
+    });
     if (!response.ok) {
-      throw new Error(`Schema Registry ${response.status} ${response.statusText}`);
+      throw new Error(
+        `Schema Registry ${response.status} ${response.statusText}`,
+      );
     }
     if (response.status === 204) {
       return undefined as T;
@@ -918,8 +1029,14 @@ export class KafkaManagerService implements OnModuleDestroy {
     this.logger.log(`topics ${id}: fetchTopicMetadata`);
     const started = Date.now();
     const meta = await admin.fetchTopicMetadata();
-    this.logger.log(`topics ${id}: ${meta.topics.length} topics in ${Date.now() - started}ms`);
-    this.activity.info('Kafka', `Topics ready: ${meta.topics.length} (${Date.now() - started}ms)`, id);
+    this.logger.log(
+      `topics ${id}: ${meta.topics.length} topics in ${Date.now() - started}ms`,
+    );
+    this.activity.info(
+      'Kafka',
+      `Topics ready: ${meta.topics.length} (${Date.now() - started}ms)`,
+      id,
+    );
     return meta.topics
       .filter((topic) => !INTERNAL_TOPIC.test(topic.name))
       .map((topic) => {
@@ -928,7 +1045,8 @@ export class KafkaManagerService implements OnModuleDestroy {
         );
         const offlinePartitions = topic.partitions.filter(
           (partition) =>
-            (partition.offlineReplicas?.length ?? 0) > 0 || partition.leader === -1,
+            (partition.offlineReplicas?.length ?? 0) > 0 ||
+            partition.leader === -1,
         ).length;
         return {
           name: topic.name,
@@ -948,7 +1066,10 @@ export class KafkaManagerService implements OnModuleDestroy {
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  private async enrichTopicStats(id: string, topics: TopicInfo[]): Promise<TopicInfo[]> {
+  private async enrichTopicStats(
+    id: string,
+    topics: TopicInfo[],
+  ): Promise<TopicInfo[]> {
     const { admin } = this.require(id);
     const started = Date.now();
     this.activity.info(
@@ -957,18 +1078,32 @@ export class KafkaManagerService implements OnModuleDestroy {
       id,
     );
 
-    const highByTopic = new Map<string, Map<number, { low: number; high: number }>>();
+    const highByTopic = new Map<
+      string,
+      Map<number, { low: number; high: number }>
+    >();
     const offsetsByTopic = new Map<string, TopicDetail['offsets']>();
 
     await mapPool(topics, 8, async (topic) => {
       try {
-        const offsets = await this.fetchTopicWatermarks(admin, topic.name, topic.partitions.length);
+        const offsets = await this.fetchTopicWatermarks(
+          admin,
+          topic.name,
+          topic.partitions.length,
+        );
         const parts = new Map<number, { low: number; high: number }>();
         offsetsByTopic.set(
           topic.name,
           offsets.map((offset) => {
-            parts.set(offset.partition, { low: Number(offset.low), high: Number(offset.high) });
-            return { partitionId: offset.partition, low: offset.low, high: offset.high };
+            parts.set(offset.partition, {
+              low: Number(offset.low),
+              high: Number(offset.high),
+            });
+            return {
+              partitionId: offset.partition,
+              low: offset.low,
+              high: offset.high,
+            };
           }),
         );
         highByTopic.set(topic.name, parts);
@@ -985,7 +1120,9 @@ export class KafkaManagerService implements OnModuleDestroy {
     const described = listed.groups.length
       ? await admin.describeGroups(listed.groups.map((group) => group.groupId))
       : { groups: [] };
-    const stateById = new Map(described.groups.map((group) => [group.groupId, group.state]));
+    const stateById = new Map(
+      described.groups.map((group) => [group.groupId, group.state]),
+    );
 
     await mapPool(listed.groups, 8, async (group) => {
       try {
@@ -993,14 +1130,19 @@ export class KafkaManagerService implements OnModuleDestroy {
         for (const entry of committed) {
           let topicLag = 0;
           for (const partition of entry.partitions) {
-            const watermark = highByTopic.get(entry.topic)?.get(partition.partition);
+            const watermark = highByTopic
+              .get(entry.topic)
+              ?.get(partition.partition);
             const current = Number(partition.offset);
             if (!watermark || !Number.isFinite(current) || current < 0) {
               continue;
             }
             topicLag += Math.max(0, watermark.high - current);
           }
-          lagByTopic.set(entry.topic, (lagByTopic.get(entry.topic) ?? 0) + topicLag);
+          lagByTopic.set(
+            entry.topic,
+            (lagByTopic.get(entry.topic) ?? 0) + topicLag,
+          );
           const groups = groupsByTopic.get(entry.topic) ?? [];
           groups.push({
             groupId: group.groupId,
@@ -1050,8 +1192,14 @@ export class KafkaManagerService implements OnModuleDestroy {
       ),
     });
 
-    this.logger.log(`topic stats ${id}: ${enriched.length} topics in ${Date.now() - started}ms`);
-    this.activity.info('Kafka', `Topic stats ready (${Date.now() - started}ms)`, id);
+    this.logger.log(
+      `topic stats ${id}: ${enriched.length} topics in ${Date.now() - started}ms`,
+    );
+    this.activity.info(
+      'Kafka',
+      `Topic stats ready (${Date.now() - started}ms)`,
+      id,
+    );
     return enriched;
   }
 
@@ -1059,14 +1207,22 @@ export class KafkaManagerService implements OnModuleDestroy {
     admin: Admin,
     name: string,
     offsets: Array<{ partition: number; high: string }>,
-  ): Promise<{ consumerGroups: TopicDetail['consumerGroups']; consumerLag: number }> {
-    const high = new Map(offsets.map((offset) => [offset.partition, Number(offset.high)]));
+  ): Promise<{
+    consumerGroups: TopicDetail['consumerGroups'];
+    consumerLag: number;
+  }> {
+    const high = new Map(
+      offsets.map((offset) => [offset.partition, Number(offset.high)]),
+    );
     const listed = await admin.listGroups();
     const consumerGroups: TopicDetail['consumerGroups'] = [];
     let consumerLag = 0;
     await mapPool(listed.groups, 8, async (group) => {
       try {
-        const committed = await admin.fetchOffsets({ groupId: group.groupId, topics: [name] });
+        const committed = await admin.fetchOffsets({
+          groupId: group.groupId,
+          topics: [name],
+        });
         let topicLag = 0;
         for (const entry of committed) {
           if (entry.topic !== name) {
@@ -1075,14 +1231,22 @@ export class KafkaManagerService implements OnModuleDestroy {
           for (const partition of entry.partitions) {
             const watermark = high.get(partition.partition);
             const current = Number(partition.offset);
-            if (watermark === undefined || !Number.isFinite(current) || current < 0) {
+            if (
+              watermark === undefined ||
+              !Number.isFinite(current) ||
+              current < 0
+            ) {
               continue;
             }
             topicLag += Math.max(0, watermark - current);
           }
         }
         if (topicLag > 0 || committed.some((entry) => entry.topic === name)) {
-          consumerGroups.push({ groupId: group.groupId, lag: topicLag, state: '' });
+          consumerGroups.push({
+            groupId: group.groupId,
+            lag: topicLag,
+            state: '',
+          });
           consumerLag += topicLag;
         }
       } catch {
@@ -1100,7 +1264,9 @@ export class KafkaManagerService implements OnModuleDestroy {
     admin: Admin,
     name: string,
     partitionCount?: number,
-  ): Promise<Array<{ partition: number; low: string; high: string; offset: string }>> {
+  ): Promise<
+    Array<{ partition: number; low: string; high: string; offset: string }>
+  > {
     if (partitionCount === 0) {
       return [];
     }
@@ -1111,8 +1277,12 @@ export class KafkaManagerService implements OnModuleDestroy {
         throw error;
       }
       const meta = await admin.fetchTopicMetadata({ topics: [name] });
-      const partitions = meta.topics.find((topic) => topic.name === name)?.partitions ?? [];
-      if (!partitions.length || partitions.every((partition) => partition.leader < 0)) {
+      const partitions =
+        meta.topics.find((topic) => topic.name === name)?.partitions ?? [];
+      if (
+        !partitions.length ||
+        partitions.every((partition) => partition.leader < 0)
+      ) {
         this.logger.warn(
           `offsets ${name}: skipped (no partitions or no leader)`,
         );
@@ -1140,8 +1310,12 @@ function isEmptyListOffsetsError(error: unknown): boolean {
   );
 }
 
-async function mapPool<T, R>(items: T[], limit: number, worker: (item: T) => Promise<R>): Promise<R[]> {
-  const results: R[] = new Array(items.length);
+async function mapPool<T, R>(
+  items: T[],
+  limit: number,
+  worker: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = Array.from({ length: items.length });
   let next = 0;
   const run = async () => {
     while (next < items.length) {
@@ -1150,6 +1324,8 @@ async function mapPool<T, R>(items: T[], limit: number, worker: (item: T) => Pro
       results[index] = await worker(items[index]);
     }
   };
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) || 0 }, () => run()));
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) || 0 }, () => run()),
+  );
   return results;
 }

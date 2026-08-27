@@ -14,7 +14,10 @@ export class RequestLogInterceptor implements NestInterceptor {
 
   intercept(context: ExecutionContext, next: CallHandler) {
     const req = context.switchToHttp().getRequest<Request>();
-    if (req.originalUrl.startsWith('/api/activity') || req.originalUrl === '/api/health') {
+    if (
+      req.originalUrl.startsWith('/api/activity') ||
+      req.originalUrl === '/api/health'
+    ) {
       return next.handle();
     }
     const started = Date.now();
@@ -23,7 +26,11 @@ export class RequestLogInterceptor implements NestInterceptor {
     const pending = this.activity.begin('HTTP', label, clusterId);
     return next.handle().pipe(
       tap(() =>
-        this.activity.finish(pending.id, 'ok', `${label} ${Date.now() - started}ms`),
+        this.activity.finish(
+          pending.id,
+          'ok',
+          `${label} ${Date.now() - started}ms`,
+        ),
       ),
       catchError((error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);

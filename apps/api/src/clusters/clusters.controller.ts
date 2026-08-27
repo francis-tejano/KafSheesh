@@ -94,7 +94,9 @@ export class ClusterResourcesController {
 
   @Get('topics')
   topics(@Param('id') id: string, @Query('stats') stats?: string) {
-    return this.kafka.listTopics(id, { stats: stats === '1' || stats === 'true' });
+    return this.kafka.listTopics(id, {
+      stats: stats === '1' || stats === 'true',
+    });
   }
 
   @Get('topics/:name')
@@ -184,7 +186,10 @@ export class ClusterResourcesController {
 
   @Delete('groups/:groupId')
   @UseGuards(DestructiveGuard)
-  async deleteGroup(@Param('id') id: string, @Param('groupId') groupId: string) {
+  async deleteGroup(
+    @Param('id') id: string,
+    @Param('groupId') groupId: string,
+  ) {
     await this.kafka.deleteGroup(id, groupId);
     await this.audit.record({
       action: 'group.delete',
@@ -215,7 +220,10 @@ export class ClusterResourcesController {
 
   @Delete('schemas/:subject')
   @UseGuards(DestructiveGuard)
-  async deleteSchema(@Param('id') id: string, @Param('subject') subject: string) {
+  async deleteSchema(
+    @Param('id') id: string,
+    @Param('subject') subject: string,
+  ) {
     await this.kafka.deleteSchema(id, subject);
     await this.audit.record({
       action: 'schema.delete',

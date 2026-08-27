@@ -1,4 +1,9 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'crypto';
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  randomBytes,
+} from 'crypto';
 
 const PREFIX = 'enc:v1:';
 
@@ -20,7 +25,10 @@ export function seal(value: string | undefined): string | undefined {
   }
   const iv = randomBytes(12);
   const cipher = createCipheriv('aes-256-gcm', key, iv);
-  const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
+  const encrypted = Buffer.concat([
+    cipher.update(value, 'utf8'),
+    cipher.final(),
+  ]);
   const tag = cipher.getAuthTag();
   return `${PREFIX}${iv.toString('base64')}.${tag.toString('base64')}.${encrypted.toString('base64')}`;
 }
@@ -31,11 +39,17 @@ export function open(value: string | undefined): string | undefined {
   }
   const key = keyMaterial();
   if (!key) {
-    throw new Error('Encrypted secret found but KAFSHEESH_MASTER_KEY is not set');
+    throw new Error(
+      'Encrypted secret found but KAFSHEESH_MASTER_KEY is not set',
+    );
   }
   const payload = value.slice(PREFIX.length);
   const [ivB64, tagB64, dataB64] = payload.split('.');
-  const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(ivB64, 'base64'));
+  const decipher = createDecipheriv(
+    'aes-256-gcm',
+    key,
+    Buffer.from(ivB64, 'base64'),
+  );
   decipher.setAuthTag(Buffer.from(tagB64, 'base64'));
   const decrypted = Buffer.concat([
     decipher.update(Buffer.from(dataB64, 'base64')),
@@ -44,7 +58,10 @@ export function open(value: string | undefined): string | undefined {
   return decrypted.toString('utf8');
 }
 
-export function sealSecrets<T extends Record<string, unknown>>(obj: T, keys: (keyof T)[]): T {
+export function sealSecrets<T extends Record<string, unknown>>(
+  obj: T,
+  keys: (keyof T)[],
+): T {
   const next = { ...obj };
   for (const key of keys) {
     const value = next[key];

@@ -200,7 +200,10 @@ export class ClustersService {
     const now = new Date().toISOString();
     const copy: ClusterConfig = structuredClone(source);
     copy.id = randomUUID();
-    copy.name = this.copyName(source.name, clusters.map((cluster) => cluster.name));
+    copy.name = this.copyName(
+      source.name,
+      clusters.map((cluster) => cluster.name),
+    );
     copy.createdAt = now;
     copy.updatedAt = now;
     clusters.push(copy);
@@ -257,7 +260,11 @@ export class ClustersService {
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       this.logger.error(`Connect failed "${cluster.name}": ${detail}`);
-      this.activity.error('Connect', `Connect failed "${cluster.name}": ${detail}`, id);
+      this.activity.error(
+        'Connect',
+        `Connect failed "${cluster.name}": ${detail}`,
+        id,
+      );
       await this.audit.record({
         action: 'cluster.connect',
         clusterId: id,
@@ -289,7 +296,9 @@ export class ClustersService {
       clusterId: id,
       clusterName: cluster.name,
       ok: result.ok,
-      detail: result.steps.map((step) => `${step.id}:${step.status}`).join(', '),
+      detail: result.steps
+        .map((step) => `${step.id}:${step.status}`)
+        .join(', '),
     });
     return result;
   }
@@ -321,7 +330,9 @@ export class ClustersService {
     const searches = await this.store.read<SavedSearch[]>('searches.json', []);
     await this.store.write(
       'searches.json',
-      searches.filter((search) => !(search.clusterId === clusterId && search.id === searchId)),
+      searches.filter(
+        (search) => !(search.clusterId === clusterId && search.id === searchId),
+      ),
     );
   }
 

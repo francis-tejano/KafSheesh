@@ -259,7 +259,7 @@ pnpm dev
 
 Typical corporate path: laptop → bastion → Kafka advertised as internal DNS.
 
-1. **Add cluster** → name it (for example `SIT`).
+1. **Add cluster** → name it (for example `DEV`).
 2. Choose **Tunnel**.
 3. Bastion: hostname or IP, SSH port (usually `22`), username.
 4. Auth: **Private key**. Upload a `.pem` / OpenSSH key or a PuTTY `.ppk`. Enter the passphrase if the file is encrypted.
@@ -427,7 +427,11 @@ pnpm lint
 | `pnpm dev:api` | Nest watch |
 | `pnpm dev:web` | `ng serve` with proxy |
 | `pnpm build` | shared → api → web |
-| `pnpm lint` | recursive lint |
+| `pnpm test` | API unit tests |
+| `pnpm sanity` | same checks as GitHub Actions: lint + build + API tests |
+| `pnpm lint` | ESLint on the API (shared and web report TypeScript via build) |
+
+GitHub Actions (`.github/workflows/ci.yml`) runs `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm build`, and `pnpm test` on every push and pull request.
 
 Angular is **zoneless**. Prefer signals for UI state that must update from EventSource or forms.
 
@@ -503,8 +507,9 @@ Contributions are welcome under the same license.
 1. Fork or branch from the current source.
 2. Keep changes focused. Do not reformat unrelated files.
 3. Rebuild `@kafsheesh/shared` when you change types.
-4. Document user-visible behavior in this README.
-5. By submitting a contribution, you license it to the project under **GNU GPL v3 or later**, and you assert that you have the right to do so (you wrote it, or it is under a compatible license you can relicense).
+4. Keep GitHub Actions CI green (`pnpm sanity`: lint, build, API tests).
+5. Document user-visible behavior in this README.
+6. By submitting a contribution, you license it to the project under **GNU GPL v3 or later**, and you assert that you have the right to do so (you wrote it, or it is under a compatible license you can relicense).
 
 If your employer owns your work, get a copyright disclaimer from them before you contribute (see the “How to Apply These Terms” section of [`LICENSE`](./LICENSE)).
 

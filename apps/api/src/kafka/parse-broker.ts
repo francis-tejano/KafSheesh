@@ -10,7 +10,10 @@ export function parseBroker(broker: string): { host: string; port: number } {
   if (idx === -1) {
     return { host: trimmed, port: 9092 };
   }
-  return { host: trimmed.slice(0, idx), port: Number(trimmed.slice(idx + 1) || 9092) };
+  return {
+    host: trimmed.slice(0, idx),
+    port: Number(trimmed.slice(idx + 1) || 9092),
+  };
 }
 
 export function brokerKey(host: string, port: number): string {

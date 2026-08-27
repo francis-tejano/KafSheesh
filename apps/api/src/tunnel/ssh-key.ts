@@ -15,7 +15,10 @@ export function isPuttyKey(text: string): boolean {
   return text.trimStart().startsWith('PuTTY-User-Key-File-');
 }
 
-export function resolvePrivateKey(raw?: string, passphrase?: string): string | undefined {
+export function resolvePrivateKey(
+  raw?: string,
+  passphrase?: string,
+): string | undefined {
   if (!raw) {
     return raw;
   }

@@ -13,6 +13,8 @@
     "dev:web": "pnpm --filter @kafsheesh/web start:dev",
     "build:shared": "pnpm --filter @kafsheesh/shared build",
     "build": "pnpm --filter @kafsheesh/shared build && pnpm --filter @kafsheesh/api build && pnpm --filter @kafsheesh/web build",
+    "test": "pnpm --filter @kafsheesh/api test",
+    "sanity": "pnpm lint && pnpm build && pnpm test",
     "lint": "pnpm -r lint"
   },
   "engines": {

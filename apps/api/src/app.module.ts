@@ -6,7 +6,11 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuditService } from './audit/audit.service';
 import { RequestLogInterceptor } from './common/request-log.interceptor';
-import { AuditController, ClusterResourcesController, ClustersController } from './clusters/clusters.controller';
+import {
+  AuditController,
+  ClusterResourcesController,
+  ClustersController,
+} from './clusters/clusters.controller';
 import { ClustersService } from './clusters/clusters.service';
 import { KafkaManagerService } from './kafka/kafka-manager.service';
 import { JsonStoreService } from './store/json-store.service';

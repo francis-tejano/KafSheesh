@@ -15,7 +15,9 @@ export interface ResolvedHost {
   source: 'ip' | 'lookup' | 'nameserver' | 'system' | 'hosts' | 'cache';
 }
 
-export async function resolveConnectAddress(host: string): Promise<ResolvedHost> {
+export async function resolveConnectAddress(
+  host: string,
+): Promise<ResolvedHost> {
   const name = host.trim();
   if (!name) {
     throw new Error('Bastion host is empty');
@@ -51,9 +53,16 @@ export async function resolveConnectAddress(host: string): Promise<ResolvedHost>
 }
 
 export function explainLookupError(host: string, error: unknown): Error {
-  const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
+  const code =
+    error && typeof error === 'object' && 'code' in error
+      ? String(error.code)
+      : '';
   const detail = error instanceof Error ? error.message : String(error);
-  if (code === 'ENOTFOUND' || code === 'EAI_AGAIN' || detail.includes('ENOTFOUND')) {
+  if (
+    code === 'ENOTFOUND' ||
+    code === 'EAI_AGAIN' ||
+    detail.includes('ENOTFOUND')
+  ) {
     return new Error(`Cannot reach ${host} (${code || 'ENOTFOUND'}).`);
   }
   return error instanceof Error ? error : new Error(detail);
@@ -73,7 +82,9 @@ async function tryLookup(name: string): Promise<ResolvedHost | undefined> {
   }
 }
 
-async function trySystemNameservers(name: string): Promise<ResolvedHost | undefined> {
+async function trySystemNameservers(
+  name: string,
+): Promise<ResolvedHost | undefined> {
   const servers = await listNameservers();
   for (const server of servers) {
     const address = await resolve4Against(name, [server]);
@@ -84,7 +95,10 @@ async function trySystemNameservers(name: string): Promise<ResolvedHost | undefi
   return undefined;
 }
 
-function resolve4Against(name: string, servers: string[]): Promise<string | undefined> {
+function resolve4Against(
+  name: string,
+  servers: string[],
+): Promise<string | undefined> {
   return new Promise((resolve) => {
     const resolver = new Resolver();
     try {
@@ -109,8 +123,12 @@ async function listNameservers(): Promise<string[]> {
   }
   if (process.platform === 'darwin') {
     try {
-      const { stdout } = await execFileAsync('/usr/sbin/scutil', ['--dns'], { timeout: 3000 });
-      for (const match of stdout.matchAll(/nameserver\[\d+\]\s*:\s*([0-9a-fA-F:.]+)/g)) {
+      const { stdout } = await execFileAsync('/usr/sbin/scutil', ['--dns'], {
+        timeout: 3000,
+      });
+      for (const match of stdout.matchAll(
+        /nameserver\[\d+\]\s*:\s*([0-9a-fA-F:.]+)/g,
+      )) {
         if (!match[1].includes(':')) {
           found.add(match[1]);
         }
@@ -134,7 +152,9 @@ async function listNameservers(): Promise<string[]> {
   return [...found];
 }
 
-async function trySystemResolver(name: string): Promise<ResolvedHost | undefined> {
+async function trySystemResolver(
+  name: string,
+): Promise<ResolvedHost | undefined> {
   if (process.platform === 'darwin') {
     try {
       const { stdout } = await execFileAsync(
@@ -151,7 +171,11 @@ async function trySystemResolver(name: string): Promise<ResolvedHost | undefined
     }
   }
   try {
-    const { stdout } = await execFileAsync('/usr/bin/getent', ['ahostsv4', name], { timeout: 4000 });
+    const { stdout } = await execFileAsync(
+      '/usr/bin/getent',
+      ['ahostsv4', name],
+      { timeout: 4000 },
+    );
     const match = stdout.match(/^(\d{1,3}(?:\.\d{1,3}){3})\s/);
     if (match) {
       return { address: match[1], source: 'system' };
@@ -194,7 +218,11 @@ async function tryHostsFile(name: string): Promise<ResolvedHost | undefined> {
         continue;
       }
       const parts = trimmed.split(/\s+/);
-      if (parts.length >= 2 && parts.slice(1).includes(name) && isIpAddress(parts[0])) {
+      if (
+        parts.length >= 2 &&
+        parts.slice(1).includes(name) &&
+        isIpAddress(parts[0])
+      ) {
         return { address: parts[0], source: 'hosts' };
       }
     }
@@ -228,7 +256,9 @@ async function writeDisk(cache: DiskCache): Promise<void> {
   await writeFile(path, JSON.stringify(cache, null, 2), 'utf8');
 }
 
-async function readPersistedHost(name: string): Promise<ResolvedHost | undefined> {
+async function readPersistedHost(
+  name: string,
+): Promise<ResolvedHost | undefined> {
   const cache = await readDisk();
   const hit = cache.hosts[name];
   if (hit?.address && isIpAddress(hit.address)) {

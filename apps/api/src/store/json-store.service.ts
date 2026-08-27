@@ -4,7 +4,8 @@ import { dirname, join } from 'path';
 
 @Injectable()
 export class JsonStoreService implements OnModuleInit {
-  private readonly root = process.env.KAFSHEESH_DATA_DIR ?? join(process.cwd(), 'data');
+  private readonly root =
+    process.env.KAFSHEESH_DATA_DIR ?? join(process.cwd(), 'data');
 
   async onModuleInit() {
     await mkdir(this.root, { recursive: true });

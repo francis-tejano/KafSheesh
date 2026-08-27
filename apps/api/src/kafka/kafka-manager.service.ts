@@ -39,6 +39,9 @@ import { ActivityService } from '../activity/activity.service';
 import { open } from '../common/crypto';
 import { SshTunnelService } from '../tunnel/ssh-tunnel.service';
 import { browseStartOffset, browseWindowSize } from './browse-window';
+import { registerCompressionCodecs } from './register-codecs';
+
+registerCompressionCodecs();
 import {
   brokerKey,
   isLoopbackHost,

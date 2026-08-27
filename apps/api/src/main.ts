@@ -3,6 +3,9 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { isDestructiveDisabled } from './common/flags';
 import { HttpErrorFilter } from './common/http-error.filter';
+import { registerCompressionCodecs } from './kafka/register-codecs';
+
+registerCompressionCodecs();
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);

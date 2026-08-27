@@ -1,0 +1,39 @@
+{
+  "name": "@kafsheesh/web",
+  "version": "0.1.0",
+  "scripts": {
+    "ng": "ng",
+    "start": "ng serve",
+    "start:dev": "ng serve --host 0.0.0.0 --proxy-config proxy.conf.json",
+    "build": "ng build",
+    "watch": "ng build --watch --configuration development",
+    "test": "ng test"
+  },
+  "private": true,
+  "license": "GPL-3.0-or-later",
+  "author": "Francis Tejano",
+  "dependencies": {
+    "@angular/common": "^21.2.22",
+    "@angular/compiler": "^21.2.22",
+    "@angular/core": "^21.2.22",
+    "@angular/forms": "^21.2.22",
+    "@angular/platform-browser": "^21.2.22",
+    "@angular/router": "^21.2.22",
+    "@kafsheesh/shared": "workspace:*",
+    "rxjs": "~7.8.0",
+    "tslib": "^2.3.0"
+  },
+  "devDependencies": {
+    "@angular/build": "^21.2.22",
+    "@angular/cli": "^21.2.22",
+    "@angular/compiler-cli": "^21.2.22",
+    "@types/jasmine": "~5.1.0",
+    "jasmine-core": "~5.6.0",
+    "karma": "~6.4.0",
+    "karma-chrome-launcher": "~3.2.0",
+    "karma-coverage": "~2.2.0",
+    "karma-jasmine": "~5.1.0",
+    "karma-jasmine-html-reporter": "~2.1.0",
+    "typescript": "~5.9.3"
+  }
+}

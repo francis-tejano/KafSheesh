@@ -1,0 +1,16 @@
+node_modules
+dist
+.angular
+.nx
+coverage
+*.log
+.DS_Store
+.env
+.env.local
+apps/api/data
+data
+packages/shared/dist
+.idea
+.vscode/*
+!.vscode/extensions.json
+*.tsbuildinfo

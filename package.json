@@ -1,0 +1,21 @@
+{
+  "name": "kafsheesh",
+  "private": true,
+  "version": "0.1.0",
+  "license": "GPL-3.0-or-later",
+  "author": "Francis Tejano",
+  "description": "Kafka operations console with first-class jump-host tunneling",
+  "packageManager": "pnpm@9.15.4",
+  "scripts": {
+    "predev": "pnpm --filter @kafsheesh/shared build",
+    "dev": "pnpm --parallel --filter @kafsheesh/api --filter @kafsheesh/web start:dev",
+    "dev:api": "pnpm --filter @kafsheesh/api start:dev",
+    "dev:web": "pnpm --filter @kafsheesh/web start:dev",
+    "build:shared": "pnpm --filter @kafsheesh/shared build",
+    "build": "pnpm --filter @kafsheesh/shared build && pnpm --filter @kafsheesh/api build && pnpm --filter @kafsheesh/web build",
+    "lint": "pnpm -r lint"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

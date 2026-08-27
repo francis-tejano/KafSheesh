@@ -1,66 +1,61 @@
 services:
   kafka:
-    image: bitnami/kafka:3.9
+    image: apache/kafka:3.9.1
     container_name: kafsheesh-kafka
-    ports:
-      - "9092:9092"
+    hostname: kafka
     environment:
-      KAFKA_CFG_NODE_ID: 0
-      KAFKA_CFG_PROCESS_ROLES: controller,broker
-      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
-      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
-      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 0@kafka:9093
-      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
-      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
-      KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      CLUSTER_ID: 4L6g3nShT-eMCtK--X86sw
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
     volumes:
-      - kafka_data:/bitnami/kafka
+      - kafka_data:/var/lib/kafka/data
+    restart: unless-stopped
 
-  kafka-private:
-    image: bitnami/kafka:3.9
-    container_name: kafsheesh-kafka-private
+  api:
+    build:
+      context: .
+      target: api
+    container_name: kafsheesh-api
     environment:
-      KAFKA_CFG_NODE_ID: 1
-      KAFKA_CFG_PROCESS_ROLES: controller,broker
-      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
-      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
-      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 1@kafka-private:9093
-      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka-private:9092
-      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
-      KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      PORT: "4000"
+      KAFSHEESH_DATA_DIR: /data
+      KAFSHEESH_MASTER_KEY: ${KAFSHEESH_MASTER_KEY:-change-me-in-production}
+      KAFSHEESH_TLS_REJECT_UNAUTHORIZED: ${KAFSHEESH_TLS_REJECT_UNAUTHORIZED:-true}
     volumes:
-      - kafka_private_data:/bitnami/kafka
-    networks:
-      - kafka_wall
-
-  bastion:
-    image: lscr.io/linuxserver/openssh-server:latest
-    container_name: kafsheesh-bastion
-    environment:
-      PUID: "1000"
-      PGID: "1000"
-      TZ: Etc/UTC
-      PASSWORD_ACCESS: "true"
-      USER_NAME: kafsheesh
-      USER_PASSWORD: kafsheesh
-    ports:
-      - "2222:2222"
-    networks:
-      - default
-      - kafka_wall
+      - kafsheesh_data:/data
     depends_on:
-      - kafka-private
+      - kafka
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/api/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+
+  web:
+    build:
+      context: .
+      target: web
+    container_name: kafsheesh-web
+    ports:
+      - "${KAFSHEESH_WEB_PORT:-4444}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   kafka_data:
-  kafka_private_data:
-
-networks:
-  kafka_wall:
-    driver: bridge
+  kafsheesh_data:

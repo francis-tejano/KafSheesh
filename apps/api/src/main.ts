@@ -6,10 +6,17 @@ import { HttpErrorFilter } from './common/http-error.filter';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.setGlobalPrefix('api');
+  const extraOrigins = (process.env.CORS_ORIGIN ?? '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
   app.enableCors({
     origin: [
       'http://localhost:4200',
       'http://127.0.0.1:4200',
+      'http://localhost:4444',
+      'http://127.0.0.1:4444',
+      ...extraOrigins,
     ],
     credentials: true,
   });

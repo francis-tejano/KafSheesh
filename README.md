@@ -21,21 +21,20 @@ Kafbat and similar UIs assume your laptop or container can open a TCP connection
 5. [Repository layout](#repository-layout)
 6. [Prerequisites](#prerequisites)
 7. [Quick start](#quick-start)
-8. [Local Kafka demos](#local-kafka-demos)
-9. [Connecting a real cluster](#connecting-a-real-cluster)
-10. [Using the UI](#using-the-ui)
-11. [Activity log](#activity-log)
-12. [Environment variables](#environment-variables)
-13. [Data, secrets, and encryption](#data-secrets-and-encryption)
-14. [HTTP API](#http-api)
-15. [Development](#development)
-16. [Production notes](#production-notes)
-17. [Security](#security)
-18. [Limitations](#limitations)
-19. [Third-party software](#third-party-software)
-20. [Contributing](#contributing)
-21. [Conveying copies and modifications](#conveying-copies-and-modifications)
-22. [Warranty and liability](#warranty-and-liability)
+8. [Connecting a real cluster](#connecting-a-real-cluster)
+9. [Using the UI](#using-the-ui)
+10. [Activity log](#activity-log)
+11. [Environment variables](#environment-variables)
+12. [Data, secrets, and encryption](#data-secrets-and-encryption)
+13. [HTTP API](#http-api)
+14. [Development](#development)
+15. [Production notes](#production-notes)
+16. [Security](#security)
+17. [Limitations](#limitations)
+18. [Third-party software](#third-party-software)
+19. [Contributing](#contributing)
+20. [Conveying copies and modifications](#conveying-copies-and-modifications)
+21. [Warranty and liability](#warranty-and-liability)
 
 ---
 
@@ -187,7 +186,8 @@ kafsheesh/
 ├── README.md               This file
 ├── package.json            Workspace scripts; license GPL-3.0-or-later
 ├── pnpm-workspace.yaml
-├── docker-compose.yml      Direct Kafka :9092 + private Kafka + bastion :2222
+├── docker-compose.yml      Packaged UI + API + Kafka
+├── Dockerfile              Multi-stage api / web images
 ├── .env.example
 ├── apps/api/               NestJS API (prefix /api, default port 4000)
 │   └── src/
@@ -210,8 +210,8 @@ After you change shared types, rebuild `@kafsheesh/shared` (`pnpm build:shared` 
 
 - **Node.js 20+** (see `engines` in the root `package.json`)
 - **[pnpm](https://pnpm.io/)** 9.15+ (the repo pins `packageManager`)
-- **Docker** and Docker Compose, only if you want the local Kafka / bastion demo
-- Network path from the **API host** to the bastion (port 22 or your SSH port), and from the bastion to Kafka
+- **Docker** and Docker Compose, to run the packaged stack
+- For tunnel mode: network path from the **API host** to the bastion (port 22 or your SSH port), and from the bastion to Kafka
 
 The UI talks only to the API. The browser never opens SSH or Kafka sockets.
 
@@ -219,78 +219,39 @@ The UI talks only to the API. The browser never opens SSH or Kafka sockets.
 
 ## Quick start
 
+Packaged stack (UI, API, and a local Kafka broker):
+
 ```bash
 git clone <this-repo>
 cd kafsheesh
-cp .env.example .env          # optional; API also reads process env
+cp .env.example .env          # set KAFSHEESH_MASTER_KEY before production use
+docker compose up --build -d
+```
+
+| Surface | URL |
+| --- | --- |
+| UI | http://localhost:4444 |
+| API (via nginx) | http://localhost:4444/api |
+| API health | http://localhost:4444/api/health |
+
+Change the published UI port with `KAFSHEESH_WEB_PORT` (default `4444`).
+
+Add a cluster in **Direct** mode with brokers `kafka:9092` — that hostname is what the API container uses on the Compose network.
+
+Local development without Docker:
+
+```bash
 pnpm install
 pnpm dev
 ```
 
-`pnpm dev` builds shared types, then starts the API and the web app in parallel.
+`pnpm dev` builds shared types, then starts the API (`:4000`) and the Angular dev server (`:4200`). The dev server proxies `/api` to `http://localhost:4000` (`apps/web/proxy.conf.json`).
 
 | Surface | URL |
 | --- | --- |
 | UI | http://localhost:4200 |
 | API health | http://localhost:4000/api/health |
-| Activity snapshot | http://localhost:4000/api/activity |
 | Activity stream | http://localhost:4000/api/activity/stream (SSE) |
-
-The Angular dev server proxies `/api` to `http://localhost:4000` (`apps/web/proxy.conf.json`).
-
-Individual processes:
-
-```bash
-pnpm --filter @kafsheesh/shared build
-pnpm --filter @kafsheesh/api start:dev
-pnpm --filter @kafsheesh/web start:dev
-```
-
-Production-style build:
-
-```bash
-pnpm build
-# API:  node apps/api/dist/main.js
-# Web:  static files in apps/web/dist/web/browser (serve behind any HTTP server)
-```
-
----
-
-## Local Kafka demos
-
-`docker-compose.yml` defines two clusters so you can exercise both modes without a corporate network.
-
-### Direct (host port published)
-
-```bash
-docker compose up -d kafka
-```
-
-In the UI: **Add cluster** → Direct → brokers `localhost:9092`.
-
-| Compose service | Image | Ports | Advertised |
-| --- | --- | --- | --- |
-| `kafka` | `bitnami/kafka:3.9` | `9092:9092` | `localhost:9092` |
-
-### Tunnel (no host ports on Kafka)
-
-```bash
-docker compose up -d kafka-private bastion
-```
-
-`kafka-private` has **no published ports**. The only way in is SSH to the bastion, which shares the `kafka_wall` network.
-
-| Field | Value |
-| --- | --- |
-| Mode | Tunnel |
-| Bastion host | `localhost` |
-| SSH port | `2222` |
-| Username / password | `kafsheesh` / `kafsheesh` |
-| Brokers as seen from the bastion | `kafka-private:9092` |
-
-Run **diagnostics**, then **Connect**.
-
-The bastion image is `lscr.io/linuxserver/openssh-server` with password auth enabled for the demo only. Do not copy that pattern to production.
 
 ---
 
@@ -371,8 +332,10 @@ Copy `.env.example` and export or place values where the API process can read th
 | `KAFSHEESH_DATA_DIR` | `./apps/api/data` when started from that package, else `./data` | Directory for `clusters.json`, searches, audit |
 | `KAFSHEESH_MASTER_KEY` | unset | If set, SHA-256 of this string is the AES-256-GCM key for SSH/SASL/registry secrets |
 | `KAFSHEESH_TLS_REJECT_UNAUTHORIZED` | `true` | Set `false` only in development if Kafka uses a private CA you have not installed |
+| `KAFSHEESH_WEB_PORT` | `4444` | Host port for the Compose UI (nginx) |
+| `CORS_ORIGIN` | empty | Extra comma-separated browser origins allowed by the API |
 
-The API CORS allow-list in development is `http://localhost:4200` and `http://127.0.0.1:4200`. Tighten this if you serve the UI from another origin.
+Compose serves the UI and `/api` from the same origin, so CORS is unused in that mode. For `pnpm dev`, the allow-list includes localhost `:4200` and `:4444`.
 
 ---
 
@@ -472,13 +435,11 @@ Do not add `ppk-to-openssh` (GPL-3, and a previous approach hung the product on 
 
 ## Production notes
 
-1. Set a long random `KAFSHEESH_MASTER_KEY` and keep it with the data volume.
-2. Point `KAFSHEESH_DATA_DIR` at a persistent disk. Back it up.
-3. Build the web app and serve it from the same origin as `/api`, or extend CORS deliberately.
-4. Bind the API to localhost or an internal interface. Put TLS and authentication on a reverse proxy you control (this app has no built-in user login).
-5. Run `node apps/api/dist/main.js` under your process supervisor. The process prints the GPL no-warranty line on start.
-6. Do not publish the demo bastion (`PASSWORD_ACCESS=true`) to the internet.
-7. If you distribute a container image or binary of Kafsheesh, include `LICENSE`, this README, and a way to obtain this source tree (GPL-3 §6).
+1. Set a long random `KAFSHEESH_MASTER_KEY` and keep it with the `kafsheesh_data` volume.
+2. `docker compose up --build -d` is the packaged run: nginx serves the UI and proxies `/api` to the API. Cluster state lives in `kafsheesh_data`.
+3. Put TLS and authentication on a reverse proxy you control in front of port 4444 (this app has no built-in user login).
+4. If you run the API without Compose, point `KAFSHEESH_DATA_DIR` at a persistent disk and run `node apps/api/dist/main.js`.
+5. If you distribute a container image or binary of Kafsheesh, include `LICENSE`, this README, and a way to obtain this source tree (GPL-3 §6).
 
 Example written offer (when you ship object code without the full tree on the same medium):
 
@@ -525,7 +486,7 @@ Major runtime dependencies (not exhaustive; see each `package.json` and `node_mo
 | ssh2 | SSH and `forwardOut` | MIT |
 | sshpk | PEM / PPK parse | MIT |
 | RxJS | Streams | Apache-2.0 |
-| Bitnami Kafka / linuxserver OpenSSH images | Optional Compose demo | Image terms apply; not part of the Kafsheesh source license grant |
+| Apache Kafka image (`apache/kafka`) | Compose broker | Image terms apply; not part of the Kafsheesh source license grant |
 
 Do not remove license files from a source or binary distribution. If you add a dependency, prefer GPL-3-compatible licenses (MIT, BSD, Apache-2.0, LGPL, GPL). Do not add a proprietary SDK that forbids GPL combination.
 

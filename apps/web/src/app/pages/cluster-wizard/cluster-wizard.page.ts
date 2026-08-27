@@ -297,11 +297,11 @@ export class ClusterWizardPage {
     ssl: false,
     tunnel: {
       enabled: true,
-      host: 'localhost',
+      host: '',
       port: 22,
-      username: 'kafsheesh',
+      username: '',
       authType: 'password',
-      password: 'kafsheesh',
+      password: '',
     },
   };
 

@@ -1,0 +1,14 @@
+.git
+.angular
+.idea
+.vscode
+**/.DS_Store
+**/node_modules
+**/dist
+**/*.log
+**/*.tsbuildinfo
+apps/api/data
+data
+coverage
+.env
+.env.local

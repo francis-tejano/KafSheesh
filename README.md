@@ -431,7 +431,7 @@ pnpm lint
 | `pnpm sanity` | same checks as GitHub Actions: lint + build + API tests |
 | `pnpm lint` | ESLint on the API (shared and web report TypeScript via build) |
 
-GitHub Actions (`.github/workflows/ci.yml`) runs `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm build`, and `pnpm test` on every push and pull request.
+GitHub Actions (`.github/workflows/ci.yml`) runs `pnpm install --frozen-lockfile`, `pnpm lint` (which builds `@kafsheesh/shared` first so type-aware ESLint can resolve those types), `pnpm build`, and `pnpm test` on every push and pull request.
 
 Angular is **zoneless**. Prefer signals for UI state that must update from EventSource or forms.
 

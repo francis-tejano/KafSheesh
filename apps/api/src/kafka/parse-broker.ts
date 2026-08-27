@@ -16,3 +16,20 @@ export function parseBroker(broker: string): { host: string; port: number } {
 export function brokerKey(host: string, port: number): string {
   return `${host}:${port}`;
 }
+
+const LOOPBACK = new Set(['localhost', '127.0.0.1', '::1']);
+
+/** In Compose the API is not the host, so localhost:9092 would hit this container. */
+export function rewriteLoopbackBrokers(brokers: string[]): string[] {
+  const composeHost = process.env.KAFSHEESH_COMPOSE_KAFKA_HOST?.trim();
+  if (!composeHost) {
+    return brokers;
+  }
+  return brokers.map((broker) => {
+    const parsed = parseBroker(broker);
+    if (!LOOPBACK.has(parsed.host.toLowerCase())) {
+      return broker;
+    }
+    return brokerKey(composeHost, parsed.port);
+  });
+}

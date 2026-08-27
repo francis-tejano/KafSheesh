@@ -236,7 +236,7 @@ docker compose up --build -d
 
 Change the published UI port with `KAFSHEESH_WEB_PORT` (default `4444`).
 
-Add a cluster in **Direct** mode with brokers `kafka:9092` — that hostname is what the API container uses on the Compose network.
+Add a cluster in **Direct** mode with brokers `localhost:9092` or `kafka:9092`. The packaged API remaps host loopback to the Compose service `kafka`. Host clients outside Compose still use `localhost:9092`.
 
 Local development without Docker:
 
@@ -333,6 +333,8 @@ Copy `.env.example` and export or place values where the API process can read th
 | `KAFSHEESH_MASTER_KEY` | unset | If set, SHA-256 of this string is the AES-256-GCM key for SSH/SASL/registry secrets |
 | `KAFSHEESH_TLS_REJECT_UNAUTHORIZED` | `true` | Set `false` only in development if Kafka uses a private CA you have not installed |
 | `KAFSHEESH_WEB_PORT` | `4444` | Host port for the Compose UI (nginx) |
+| `KAFSHEESH_COMPOSE_KAFKA_HOST` | unset | If set (Compose uses `kafka`), rewrite `localhost` / `127.0.0.1` brokers to that hostname |
+| `KAFSHEESH_DISABLE_DESTRUCTIVE` | `false` | Set `true` / `1` / `yes` / `on` to block create/delete topic, produce, offset reset, delete group, schema register/delete, and delete cluster. Browse, connect, and cluster edit stay available. The API enforces this; the UI hides those actions. |
 | `CORS_ORIGIN` | empty | Extra comma-separated browser origins allowed by the API |
 
 Compose serves the UI and `/api` from the same origin, so CORS is unused in that mode. For `pnpm dev`, the allow-list includes localhost `:4200` and `:4444`.
@@ -453,7 +455,7 @@ Example written offer (when you ship object code without the full tree on the sa
 - Private keys and Kafka passwords live on the API host. Disk encryption and a master key are your responsibility.
 - Tunneling does not weaken Kafka ACL or TLS requirements; it only provides a TCP path.
 - Message browse creates a consumer through KafkaJS. Use it on topics you are allowed to read. Filters run in the API process, not on the broker.
-- Offset reset and topic delete are destructive. The UI asks for confirmation; the API does not have a second person-check.
+- Offset reset and topic delete are destructive. The UI asks for confirmation; the API does not have a second person-check. Set `KAFSHEESH_DISABLE_DESTRUCTIVE=true` to reject those calls and hide the UI.
 - `KAFSHEESH_TLS_REJECT_UNAUTHORIZED=false` disables Kafka TLS verification. Dev only.
 
 If you find a vulnerability in Kafsheesh, report it privately to the maintainers if possible, then disclose after a fix. There is no paid bug bounty.

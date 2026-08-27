@@ -1,6 +1,7 @@
 export type AuditAction =
   | 'cluster.create'
   | 'cluster.update'
+  | 'cluster.duplicate'
   | 'cluster.delete'
   | 'cluster.connect'
   | 'cluster.disconnect'

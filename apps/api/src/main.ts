@@ -1,6 +1,7 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
+import { isDestructiveDisabled } from './common/flags';
 import { HttpErrorFilter } from './common/http-error.filter';
 
 async function bootstrap() {
@@ -31,6 +32,9 @@ async function bootstrap() {
   const port = Number(process.env.PORT ?? 4000);
   await app.listen(port);
   console.log(`Kafsheesh API listening on http://localhost:${port}/api`);
+  if (isDestructiveDisabled()) {
+    console.log('KAFSHEESH_DISABLE_DESTRUCTIVE is on: delete, produce, reset, and Kafka writes are blocked.');
+  }
   console.log(
     'Kafsheesh Copyright (C) 2026 Francis Tejano. GNU GPL v3 or later. This program comes with ABSOLUTELY NO WARRANTY.',
   );

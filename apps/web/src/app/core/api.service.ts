@@ -4,10 +4,12 @@ import type {
   AuditEvent,
   BrokerInfo,
   ClusterOverview,
+  ClusterRuntime,
   ClusterSummary,
   ConnectionDiagnostic,
   ConsumerGroupInfo,
   CreateClusterInput,
+  HealthInfo,
   KafkaMessage,
   ResetOffsetsInput,
   SavedSearch,
@@ -20,6 +22,10 @@ import type {
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   private readonly http = inject(HttpClient);
+
+  health() {
+    return this.http.get<HealthInfo>('/api/health');
+  }
 
   listClusters() {
     return this.http.get<ClusterSummary[]>('/api/clusters');
@@ -37,16 +43,20 @@ export class ApiService {
     return this.http.put<ClusterSummary>(`/api/clusters/${id}`, body);
   }
 
+  duplicateCluster(id: string) {
+    return this.http.post<ClusterSummary>(`/api/clusters/${id}/duplicate`, {});
+  }
+
   deleteCluster(id: string) {
     return this.http.delete(`/api/clusters/${id}`);
   }
 
   connect(id: string) {
-    return this.http.post(`/api/clusters/${id}/connect`, {});
+    return this.http.post<ClusterRuntime>(`/api/clusters/${id}/connect`, {});
   }
 
   disconnect(id: string) {
-    return this.http.post(`/api/clusters/${id}/disconnect`, {});
+    return this.http.post<ClusterRuntime>(`/api/clusters/${id}/disconnect`, {});
   }
 
   diagnose(id: string) {

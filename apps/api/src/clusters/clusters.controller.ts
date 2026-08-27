@@ -7,8 +7,10 @@ import {
   Post,
   Put,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { AuditService } from '../audit/audit.service';
+import { DestructiveGuard } from '../common/destructive.guard';
 import { KafkaManagerService } from '../kafka/kafka-manager.service';
 import {
   CreateClusterDto,
@@ -46,8 +48,14 @@ export class ClustersController {
   }
 
   @Delete(':id')
+  @UseGuards(DestructiveGuard)
   remove(@Param('id') id: string) {
     return this.clusters.remove(id);
+  }
+
+  @Post(':id/duplicate')
+  duplicate(@Param('id') id: string) {
+    return this.clusters.duplicate(id);
   }
 
   @Post(':id/connect')
@@ -95,6 +103,7 @@ export class ClusterResourcesController {
   }
 
   @Post('topics')
+  @UseGuards(DestructiveGuard)
   async createTopic(@Param('id') id: string, @Body() body: CreateTopicDto) {
     await this.kafka.createTopic(id, body);
     await this.audit.record({
@@ -107,6 +116,7 @@ export class ClusterResourcesController {
   }
 
   @Delete('topics/:name')
+  @UseGuards(DestructiveGuard)
   async deleteTopic(@Param('id') id: string, @Param('name') name: string) {
     await this.kafka.deleteTopic(id, name);
     await this.audit.record({
@@ -141,6 +151,7 @@ export class ClusterResourcesController {
   }
 
   @Post('messages')
+  @UseGuards(DestructiveGuard)
   async produce(@Param('id') id: string, @Body() body: ProduceMessageDto) {
     await this.kafka.produce(id, body);
     await this.audit.record({
@@ -158,6 +169,7 @@ export class ClusterResourcesController {
   }
 
   @Post('groups/reset')
+  @UseGuards(DestructiveGuard)
   async reset(@Param('id') id: string, @Body() body: ResetOffsetsDto) {
     await this.kafka.resetOffsets(id, body);
     await this.audit.record({
@@ -171,6 +183,7 @@ export class ClusterResourcesController {
   }
 
   @Delete('groups/:groupId')
+  @UseGuards(DestructiveGuard)
   async deleteGroup(@Param('id') id: string, @Param('groupId') groupId: string) {
     await this.kafka.deleteGroup(id, groupId);
     await this.audit.record({
@@ -188,6 +201,7 @@ export class ClusterResourcesController {
   }
 
   @Post('schemas')
+  @UseGuards(DestructiveGuard)
   async createSchema(@Param('id') id: string, @Body() body: CreateSchemaDto) {
     await this.kafka.createSchema(id, body);
     await this.audit.record({
@@ -200,6 +214,7 @@ export class ClusterResourcesController {
   }
 
   @Delete('schemas/:subject')
+  @UseGuards(DestructiveGuard)
   async deleteSchema(@Param('id') id: string, @Param('subject') subject: string) {
     await this.kafka.deleteSchema(id, subject);
     await this.audit.record({

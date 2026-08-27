@@ -1,9 +1,10 @@
-import { Component, inject, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, effect, inject, signal, untracked } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import type { ClusterOverview } from '@kafsheesh/shared';
-import { map } from 'rxjs';
+import { catchError, map, of, switchMap } from 'rxjs';
 import { ApiService } from '../../core/api.service';
+import { ClusterSessionService } from '../../core/cluster-session.service';
 
 @Component({
   selector: 'app-overview',
@@ -22,7 +23,7 @@ import { ApiService } from '../../core/api.service';
       </div>
     </div>
 
-    @if (error()) {
+    @if (error() && selected()) {
       <div class="banner">{{ error() }}</div>
     }
 
@@ -30,10 +31,13 @@ import { ApiService } from '../../core/api.service';
       <div class="card empty">Loading cluster metadata…</div>
     }
 
-    @if (!loading() && !overview() && error()) {
+    @if (showConnectPrompt()) {
       <div class="card empty">
         <h3>Not connected</h3>
-        <p>Connect this cluster to load brokers, topics, and groups through the tunnel if needed.</p>
+        <p>
+          Connect {{ cluster()?.name ?? 'this cluster' }} to load brokers, topics, and groups
+          through the tunnel if needed.
+        </p>
         <button class="btn primary" (click)="connect()" [disabled]="busy()">
           {{ busy() ? 'Connecting…' : 'Connect now' }}
         </button>
@@ -94,7 +98,7 @@ import { ApiService } from '../../core/api.service';
           } @else {
             <p>Direct connection. No bastion hop.</p>
           }
-          <p class="help">Cluster id {{ data.clusterId }}</p>
+          <p class="help">{{ cluster()?.name ?? data.clusterId }}</p>
           <div class="row" style="margin-top:12px">
             <a class="btn ghost" [routerLink]="['/c', id(), 'topics']">Browse topics</a>
             <a class="btn ghost" [routerLink]="['/c', id(), 'groups']">Consumer groups</a>
@@ -107,42 +111,88 @@ import { ApiService } from '../../core/api.service';
 export class OverviewPage {
   private readonly api = inject(ApiService);
   private readonly route = inject(ActivatedRoute);
+  private readonly session = inject(ClusterSessionService);
+
   readonly id = toSignal(
     this.route.parent!.paramMap.pipe(map((params) => params.get('id') ?? '')),
     { initialValue: this.route.parent?.snapshot.paramMap.get('id') ?? '' },
+  );
+  readonly cluster = toSignal(
+    toObservable(this.id).pipe(
+      switchMap((id) =>
+        id ? this.api.getCluster(id).pipe(catchError(() => of(undefined))) : of(undefined),
+      ),
+    ),
   );
   readonly overview = signal<ClusterOverview | null>(null);
   readonly error = signal('');
   readonly busy = signal(false);
   readonly loading = signal(false);
+  readonly selected = computed(() => {
+    const current = this.cluster();
+    return Boolean(current && current.id === this.id());
+  });
+  readonly showConnectPrompt = computed(() => {
+    const current = this.cluster();
+    return (
+      this.selected() &&
+      !this.loading() &&
+      !this.overview() &&
+      current?.runtime.status !== 'connected' &&
+      current?.runtime.status !== 'connecting'
+    );
+  });
 
   constructor() {
-    this.load();
+    effect(() => {
+      const id = this.id();
+      this.session.revision();
+      untracked(() => this.load(id));
+    });
   }
 
-  load() {
+  load(requested = this.id()) {
+    if (!requested) {
+      return;
+    }
     this.error.set('');
     this.loading.set(true);
-    this.api.overview(this.id()).subscribe({
+    this.api.overview(requested).subscribe({
       next: (data) => {
+        if (requested !== this.id()) {
+          return;
+        }
         this.overview.set(data);
         this.loading.set(false);
       },
       error: (err: { error?: { message?: string } }) => {
+        if (requested !== this.id()) {
+          return;
+        }
         this.loading.set(false);
         this.overview.set(null);
-        this.error.set(err.error?.message ?? 'Connect the cluster first.');
+        const name = this.cluster()?.id === requested ? this.cluster()?.name : undefined;
+        const fallback = name
+          ? `${name} is not connected. Connect it first.`
+          : 'Connect the cluster first.';
+        this.error.set(err.error?.message ?? fallback);
       },
     });
   }
 
   connect() {
+    const requested = this.id();
+    const current = this.cluster();
+    if (!requested || !current || current.id !== requested) {
+      return;
+    }
     this.busy.set(true);
     this.error.set('');
-    this.api.connect(this.id()).subscribe({
+    this.api.connect(requested).subscribe({
       next: () => {
         this.busy.set(false);
-        this.load();
+        this.session.bump();
+        this.load(requested);
       },
       error: (err: { error?: { message?: string } }) => {
         this.busy.set(false);

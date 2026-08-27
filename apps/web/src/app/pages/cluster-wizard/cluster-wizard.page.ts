@@ -229,7 +229,7 @@ import { BrandComponent } from '../../layout/brand.component';
       </div>
     </form>
 
-    @if (createdId()) {
+    @if (createdId() && step() === 3) {
       <div class="card" style="margin-top:16px">
         <div class="row" style="justify-content:space-between">
           <h3 style="margin:0">Connection diagnostics</h3>

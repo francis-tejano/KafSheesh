@@ -24,6 +24,7 @@ export const routes: Routes = [
       { path: 'topics', component: TopicsPage },
       { path: 'topics/:name', component: TopicDetailPage },
       { path: 'groups', component: GroupsPage },
+      { path: 'groups/:groupId', component: GroupsPage },
       { path: 'brokers', component: BrokersPage },
       { path: 'schemas', component: SchemasPage },
       { path: 'audit', component: AuditPage },

@@ -135,14 +135,18 @@ export class ClustersService {
 
   async list(): Promise<ClusterSummary[]> {
     const clusters = await this.readAll();
-    return clusters.map((cluster) => ({
-      ...redact(cluster),
-      runtime: this.kafka.runtime(cluster.id),
-    }));
+    return clusters.map((cluster) => {
+      this.kafka.rememberName(cluster.id, cluster.name);
+      return {
+        ...redact(cluster),
+        runtime: this.kafka.runtime(cluster.id),
+      };
+    });
   }
 
   async get(id: string): Promise<ClusterSummary> {
     const cluster = await this.find(id);
+    this.kafka.rememberName(cluster.id, cluster.name);
     return { ...redact(cluster), runtime: this.kafka.runtime(id) };
   }
 
@@ -188,6 +192,28 @@ export class ClustersService {
       ok: true,
     });
     return this.get(id);
+  }
+
+  async duplicate(id: string): Promise<ClusterSummary> {
+    const source = await this.find(id);
+    const clusters = await this.readAll();
+    const now = new Date().toISOString();
+    const copy: ClusterConfig = structuredClone(source);
+    copy.id = randomUUID();
+    copy.name = this.copyName(source.name, clusters.map((cluster) => cluster.name));
+    copy.createdAt = now;
+    copy.updatedAt = now;
+    clusters.push(copy);
+    await this.store.write('clusters.json', clusters);
+    this.kafka.rememberName(copy.id, copy.name);
+    await this.audit.record({
+      action: 'cluster.duplicate',
+      clusterId: copy.id,
+      clusterName: copy.name,
+      target: source.name,
+      ok: true,
+    });
+    return this.get(copy.id);
   }
 
   async remove(id: string): Promise<void> {
@@ -325,6 +351,18 @@ export class ClustersService {
       lines.push('  path: direct');
     }
     return lines.join('\n');
+  }
+
+  private copyName(name: string, taken: string[]): string {
+    const root = name.replace(/ \(copy(?: \d+)?\)$/i, '');
+    const used = new Set(taken);
+    let candidate = `${root} (copy)`;
+    let index = 2;
+    while (used.has(candidate)) {
+      candidate = `${root} (copy ${index})`;
+      index += 1;
+    }
+    return candidate;
   }
 
   private async readAll(): Promise<ClusterConfig[]> {

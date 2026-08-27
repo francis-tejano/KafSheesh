@@ -38,7 +38,7 @@ import type {
 import { ActivityService } from '../activity/activity.service';
 import { open } from '../common/crypto';
 import { SshTunnelService } from '../tunnel/ssh-tunnel.service';
-import { brokerKey, parseBroker } from './parse-broker';
+import { brokerKey, parseBroker, rewriteLoopbackBrokers } from './parse-broker';
 
 interface LiveClient {
   config: ClusterConfig;
@@ -67,6 +67,7 @@ export class KafkaManagerService implements OnModuleDestroy {
   private readonly logger = new Logger(KafkaManagerService.name);
   private readonly clients = new Map<string, LiveClient>();
   private readonly snapshots = new Map<string, TopicSnapshot>();
+  private readonly names = new Map<string, string>();
 
   constructor(
     private readonly tunnels: SshTunnelService,
@@ -242,11 +243,16 @@ export class KafkaManagerService implements OnModuleDestroy {
     }
   }
 
+  rememberName(id: string, name: string) {
+    this.names.set(id, name);
+  }
+
   require(id: string): LiveClient {
     const live = this.clients.get(id);
     if (!live || live.status !== 'connected') {
+      const name = live?.config.name ?? this.names.get(id);
       throw new NotFoundException(
-        `Cluster ${id} is not connected. Open a tunnel/session first.`,
+        `${name ?? 'This cluster'} is not connected. Connect it first.`,
       );
     }
     return live;
@@ -657,7 +663,18 @@ export class KafkaManagerService implements OnModuleDestroy {
         config.id,
       );
     } else {
-      this.logger.log(`Direct Kafka brokers: ${brokers.join(', ')}`);
+      const remapped = rewriteLoopbackBrokers(brokers);
+      if (remapped.join(',') !== brokers.join(',')) {
+        this.logger.log(`Direct Kafka brokers: ${brokers.join(', ')} → ${remapped.join(', ')}`);
+        this.activity.info(
+          'Kafka',
+          `localhost remapped to Compose broker ${remapped.join(', ')}`,
+          config.id,
+        );
+      } else {
+        this.logger.log(`Direct Kafka brokers: ${brokers.join(', ')}`);
+      }
+      brokers = remapped;
     }
 
     const kafkaConfig: KafkaConfig = {

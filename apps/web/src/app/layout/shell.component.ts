@@ -1,9 +1,11 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, HostListener, inject, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import type { ClusterSummary } from '@kafsheesh/shared';
 import { catchError, combineLatest, map, of, switchMap } from 'rxjs';
 import { ApiService } from '../core/api.service';
+import { ClusterSessionService } from '../core/cluster-session.service';
+import { FlagsService } from '../core/flags.service';
 import { BrandComponent } from './brand.component';
 
 @Component({
@@ -17,11 +19,44 @@ import { BrandComponent } from './brand.component';
         @if (cluster(); as current) {
           <div class="cluster-switch">
             <div class="field-label">Cluster</div>
-            <select class="cluster-select" [value]="current.id" (change)="switchCluster($event)">
-              @for (item of clusters(); track item.id) {
-                <option [value]="item.id">{{ item.name }}</option>
+            <div class="cluster-picker" [class.open]="pickerOpen()">
+              <button
+                type="button"
+                class="cluster-picker-trigger"
+                [attr.aria-expanded]="pickerOpen()"
+                aria-haspopup="listbox"
+                (click)="togglePicker(); $event.stopPropagation()"
+              >
+                <span class="cluster-picker-name">{{ current.name }}</span>
+                <span class="cluster-picker-caret" aria-hidden="true">▾</span>
+              </button>
+              @if (pickerOpen()) {
+                <ul class="cluster-picker-menu" role="listbox" (click)="$event.stopPropagation()">
+                  @for (item of clusters(); track item.id) {
+                    <li>
+                      <button
+                        type="button"
+                        class="cluster-picker-option"
+                        role="option"
+                        [class.active]="item.id === current.id"
+                        [attr.aria-selected]="item.id === current.id"
+                        (click)="chooseCluster(item.id)"
+                      >
+                        <span>{{ item.name }}</span>
+                        <span
+                          class="pill"
+                          [class.ok]="item.runtime.status === 'connected'"
+                          [class.warn]="item.runtime.status === 'connecting'"
+                          [class.err]="item.runtime.status === 'error' || item.runtime.status === 'disconnected'"
+                        >
+                          {{ item.runtime.status }}
+                        </span>
+                      </button>
+                    </li>
+                  }
+                </ul>
               }
-            </select>
+            </div>
             <div class="row" style="margin-top:8px">
               <span class="pill"
                 [class.ok]="current.runtime.status === 'connected'"
@@ -54,6 +89,9 @@ import { BrandComponent } from './brand.component';
         </div>
       </aside>
       <main class="content">
+        @if (flags.disableDestructive()) {
+          <div class="banner warn">Destructive actions are disabled on this instance.</div>
+        }
         <router-outlet />
       </main>
     </div>
@@ -63,8 +101,11 @@ export class ShellComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly api = inject(ApiService);
+  private readonly session = inject(ClusterSessionService);
+  readonly flags = inject(FlagsService);
   readonly clusters = signal<ClusterSummary[]>([]);
   readonly busy = signal(false);
+  readonly pickerOpen = signal(false);
   private readonly reloadAt = signal(0);
 
   readonly id = toSignal(
@@ -73,7 +114,7 @@ export class ShellComponent {
   );
 
   readonly cluster = toSignal(
-    combineLatest([this.route.paramMap, toObservable(this.reloadAt)]).pipe(
+    combineLatest([this.route.paramMap, toObservable(this.reloadAt), toObservable(this.session.revision)]).pipe(
       map(([params]) => params.get('id') ?? ''),
       switchMap((id) => this.api.getCluster(id).pipe(catchError(() => of(undefined)))),
     ),
@@ -95,8 +136,25 @@ export class ShellComponent {
     this.loadClusters();
   }
 
-  switchCluster(event: Event) {
-    const next = (event.target as HTMLSelectElement).value;
+  @HostListener('document:click')
+  closePicker() {
+    this.pickerOpen.set(false);
+  }
+
+  @HostListener('document:keydown.escape')
+  onEscape() {
+    this.pickerOpen.set(false);
+  }
+
+  togglePicker() {
+    this.pickerOpen.update((open) => !open);
+  }
+
+  chooseCluster(next: string) {
+    this.pickerOpen.set(false);
+    if (next === this.id()) {
+      return;
+    }
     const section = this.router.url.split('/')[3] || 'overview';
     void this.router.navigate(['/c', next, section === 'topics' ? 'topics' : section]);
   }
@@ -111,6 +169,7 @@ export class ShellComponent {
       next: () => {
         this.busy.set(false);
         this.reloadAt.update((value) => value + 1);
+        this.session.bump();
         this.loadClusters();
       },
       error: () => this.busy.set(false),

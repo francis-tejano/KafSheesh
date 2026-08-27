@@ -56,6 +56,18 @@ import { DisclaimerComponent } from './disclaimer.component';
                 <div class="activity-line" [class.err]="event.level === 'error'" [class.warn]="event.level === 'warn'">
                   <span class="activity-time">{{ event.at | date:'HH:mm:ss' }}</span>
                   <span class="activity-src">{{ event.source }}</span>
+                  @if (event.status) {
+                    <span
+                      class="pill activity-status"
+                      [class.ok]="event.status === 'ok'"
+                      [class.warn]="event.status === 'ongoing'"
+                      [class.err]="event.status === 'error'"
+                    >
+                      {{ event.status === 'ongoing' ? 'ongoing' : event.status === 'ok' ? 'OK' : 'error' }}
+                    </span>
+                  } @else {
+                    <span class="activity-status-spacer"></span>
+                  }
                   <span class="activity-msg">{{ event.message }}</span>
                 </div>
               } @empty {

@@ -1,25 +1,24 @@
 import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import type { KafkaMessage, SavedSearch, TopicDetail } from '@kafsheesh/shared';
 import { map } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { ConfirmService } from '../../core/confirm.service';
+import { FlagsService } from '../../core/flags.service';
+import { FROM_TOPIC_PARAM, LIST_FILTER_PARAM, listFilterNavExtras } from '../../core/list-filter';
 import { formatLocalTime } from '../../core/local-time';
 
 @Component({
   selector: 'app-topic-detail',
-  imports: [FormsModule, RouterLink],
+  imports: [FormsModule],
   template: `
     <div class="page-head">
       <div>
-        <h1 class="mono">{{ name() }}</h1>
+        <button type="button" class="btn ghost" (click)="backToTopics()">Back</button>
+        <h1 class="mono" style="margin-top:12px">{{ name() }}</h1>
         <p>Inspect offsets, filter messages, produce, and keep searches.</p>
-      </div>
-      <div class="row">
-        <a class="btn ghost" [routerLink]="['/c', id(), 'topics']">All topics</a>
-        <button class="btn danger" (click)="remove()">Delete topic</button>
       </div>
     </div>
 
@@ -27,13 +26,26 @@ import { formatLocalTime } from '../../core/local-time';
       <div class="banner">{{ error() }}</div>
     }
 
-    @if (topic(); as detail) {
-      <div class="grid stats">
-        <div class="card stat"><div class="label">Partitions</div><div class="value">{{ detail.partitions.length }}</div></div>
-        <div class="card stat"><div class="label">Replication</div><div class="value">{{ detail.replicaCount }}</div></div>
-        <div class="card stat"><div class="label">Messages</div><div class="value">{{ (detail.messageCount ?? 0).toLocaleString() }}</div></div>
-        <div class="card stat"><div class="label">Lag</div><div class="value">{{ (detail.consumerLag ?? 0).toLocaleString() }}</div></div>
+    <div class="grid stats">
+      <div class="card stat">
+        <div class="label">Partitions</div>
+        <div class="value" [class.pending]="pending(topic()?.partitions?.length)">{{ statText(topic()?.partitions?.length) }}</div>
       </div>
+      <div class="card stat">
+        <div class="label">Replication</div>
+        <div class="value" [class.pending]="pending(topic()?.replicaCount)">{{ statText(topic()?.replicaCount) }}</div>
+      </div>
+      <div class="card stat">
+        <div class="label">Messages</div>
+        <div class="value" [class.pending]="pending(topic()?.messageCount)">{{ statText(topic()?.messageCount) }}</div>
+      </div>
+      <div class="card stat">
+        <div class="label">Lag</div>
+        <div class="value" [class.pending]="pending(topic()?.consumerLag)">{{ statText(topic()?.consumerLag) }}</div>
+      </div>
+    </div>
+
+    @if (topic(); as detail) {
       @if (detail.consumerGroups.length) {
         <div class="card table-wrap" style="margin-top:16px">
           <h3>Consumer groups</h3>
@@ -41,7 +53,7 @@ import { formatLocalTime } from '../../core/local-time';
             <thead><tr><th>Group</th><th>State</th><th>Lag</th></tr></thead>
             <tbody>
               @for (group of detail.consumerGroups; track group.groupId) {
-                <tr>
+                <tr class="clickable" (click)="openGroup(group.groupId)">
                   <td class="mono">{{ group.groupId }}</td>
                   <td>{{ group.state || '—' }}</td>
                   <td>{{ group.lag.toLocaleString() }}</td>
@@ -83,12 +95,14 @@ import { formatLocalTime } from '../../core/local-time';
         }
       </form>
 
-      <form class="card" (ngSubmit)="produce()">
-        <h3>Produce</h3>
-        <label><span>Key</span><input name="key" [(ngModel)]="produceKey" /></label>
-        <label><span>Value</span><textarea name="value" [(ngModel)]="produceValue" required></textarea></label>
-        <button class="btn primary" [disabled]="producing()">{{ producing() ? 'Sending…' : 'Send' }}</button>
-      </form>
+      @if (!flags.disableDestructive()) {
+        <form class="card" (ngSubmit)="produce()">
+          <h3>Produce</h3>
+          <label><span>Key</span><input name="key" [(ngModel)]="produceKey" /></label>
+          <label><span>Value</span><textarea name="value" [(ngModel)]="produceValue" required></textarea></label>
+          <button class="btn primary" [disabled]="producing()">{{ producing() ? 'Sending…' : 'Send' }}</button>
+        </form>
+      }
     </div>
 
     <div class="card table-wrap" style="margin-top:16px">
@@ -119,11 +133,20 @@ import { formatLocalTime } from '../../core/local-time';
         </tbody>
       </table>
     </div>
+
+    @if (!flags.disableDestructive()) {
+      <div class="card" style="margin-top:16px">
+        <h3>Delete topic</h3>
+        <p class="help">Removes partitions and retained messages from Kafka. This cannot be undone.</p>
+        <button type="button" class="btn danger" (click)="remove()">Delete topic</button>
+      </div>
+    }
   `,
 })
 export class TopicDetailPage {
   private readonly api = inject(ApiService);
   private readonly confirm = inject(ConfirmService);
+  readonly flags = inject(FlagsService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   readonly localTime = formatLocalTime;
@@ -136,11 +159,16 @@ export class TopicDetailPage {
     this.route.paramMap.pipe(map((params) => params.get('name') ?? '')),
     { initialValue: this.route.snapshot.paramMap.get('name') ?? '' },
   );
+  private readonly queryParams = toSignal(this.route.queryParamMap, {
+    initialValue: this.route.snapshot.queryParamMap,
+  });
+  private readonly listFilter = () => this.queryParams().get('filter') ?? '';
 
   readonly topic = signal<TopicDetail | null>(null);
   readonly messages = signal<KafkaMessage[]>([]);
   readonly searches = signal<SavedSearch[]>([]);
   readonly error = signal('');
+  readonly loading = signal(true);
   readonly loadingMessages = signal(false);
   readonly producing = signal(false);
   direction = 'latest';
@@ -151,14 +179,43 @@ export class TopicDetailPage {
   produceValue = '{\n  "hello": "kafsheesh"\n}';
 
   constructor() {
+    this.api.topics(this.id()).subscribe({
+      next: (topics) => {
+        const found = topics.find((item) => item.name === this.name());
+        if (found && !this.topic()) {
+          this.topic.set({
+            ...found,
+            configs: {},
+            offsets: [],
+            consumerGroups: [],
+          });
+        }
+      },
+    });
     this.api.topic(this.id(), this.name()).subscribe({
-      next: (topic) => this.topic.set(topic),
-      error: (err: { error?: { message?: string } }) =>
-        this.error.set(err.error?.message ?? 'Failed to load topic'),
+      next: (topic) => {
+        this.topic.set(topic);
+        this.loading.set(false);
+      },
+      error: (err: { error?: { message?: string } }) => {
+        this.loading.set(false);
+        this.error.set(err.error?.message ?? 'Failed to load topic');
+      },
     });
     this.api.searches(this.id()).subscribe((searches) =>
       this.searches.set(searches.filter((search) => search.topic === this.name())),
     );
+  }
+
+  pending(value: number | undefined): boolean {
+    return value === undefined && this.loading();
+  }
+
+  statText(value: number | undefined): string {
+    if (value !== undefined) {
+      return value.toLocaleString();
+    }
+    return this.loading() ? 'Fetching…' : '—';
   }
 
   loadMessages() {
@@ -234,7 +291,21 @@ export class TopicDetailPage {
       return;
     }
     this.api.deleteTopic(this.id(), this.name()).subscribe(() => {
-      void this.router.navigate(['/c', this.id(), 'topics']);
+      this.backToTopics();
+    });
+  }
+
+  backToTopics() {
+    void this.router.navigate(['/c', this.id(), 'topics'], listFilterNavExtras(this.listFilter()));
+  }
+
+  openGroup(groupId: string) {
+    const filter = this.listFilter().trim();
+    void this.router.navigate(['/c', this.id(), 'groups', groupId], {
+      queryParams: {
+        [FROM_TOPIC_PARAM]: this.name(),
+        ...(filter ? { [LIST_FILTER_PARAM]: filter } : {}),
+      },
     });
   }
 }

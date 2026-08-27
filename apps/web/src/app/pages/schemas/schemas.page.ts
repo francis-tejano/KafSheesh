@@ -6,6 +6,7 @@ import type { SchemaSubject } from '@kafsheesh/shared';
 import { map } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { ConfirmService } from '../../core/confirm.service';
+import { FlagsService } from '../../core/flags.service';
 
 @Component({
   selector: 'app-schemas',
@@ -20,6 +21,7 @@ import { ConfirmService } from '../../core/confirm.service';
     @if (error()) {
       <div class="banner">{{ error() }}</div>
     }
+    @if (!flags.disableDestructive()) {
     <form class="card" style="margin-bottom:16px" (ngSubmit)="create()">
       <div class="grid two">
         <label><span>Subject</span><input name="subject" [(ngModel)]="subject" required /></label>
@@ -35,6 +37,7 @@ import { ConfirmService } from '../../core/confirm.service';
       <label><span>Schema</span><textarea name="schema" [(ngModel)]="schema" required></textarea></label>
       <button class="btn primary">Register</button>
     </form>
+    }
     <div class="card table-wrap">
       <table>
         <thead><tr><th>Subject</th><th>Version</th><th>Type</th><th>Schema</th><th></th></tr></thead>
@@ -46,7 +49,9 @@ import { ConfirmService } from '../../core/confirm.service';
               <td>{{ item.schemaType }}</td>
               <td class="mono message-value">{{ item.schema }}</td>
               <td>
-                <button type="button" class="btn sm danger" (click)="remove(item)">Delete</button>
+                @if (!flags.disableDestructive()) {
+                  <button type="button" class="btn sm danger" (click)="remove(item)">Delete</button>
+                }
               </td>
             </tr>
           } @empty {
@@ -60,6 +65,7 @@ import { ConfirmService } from '../../core/confirm.service';
 export class SchemasPage {
   private readonly api = inject(ApiService);
   private readonly confirm = inject(ConfirmService);
+  readonly flags = inject(FlagsService);
   private readonly route = inject(ActivatedRoute);
   readonly id = toSignal(
     this.route.parent!.paramMap.pipe(map((params) => params.get('id') ?? '')),

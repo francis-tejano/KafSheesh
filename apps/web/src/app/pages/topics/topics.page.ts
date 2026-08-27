@@ -6,6 +6,8 @@ import type { TopicInfo } from '@kafsheesh/shared';
 import { map } from 'rxjs';
 import { ApiService } from '../../core/api.service';
 import { ConfirmService } from '../../core/confirm.service';
+import { FlagsService } from '../../core/flags.service';
+import { listFilterNavExtras, persistListFilter } from '../../core/list-filter';
 
 @Component({
   selector: 'app-topics',
@@ -23,9 +25,11 @@ import { ConfirmService } from '../../core/confirm.service';
       </div>
       <div class="row">
         <button class="btn ghost" (click)="load()" [disabled]="loading()">Refresh</button>
-        <button class="btn primary" (click)="showCreate.set(!showCreate())">
-          {{ showCreate() ? 'Cancel' : 'New topic' }}
-        </button>
+        @if (!flags.disableDestructive()) {
+          <button class="btn primary" (click)="showCreate.set(!showCreate())">
+            {{ showCreate() ? 'Cancel' : 'New topic' }}
+          </button>
+        }
       </div>
     </div>
 
@@ -36,7 +40,43 @@ import { ConfirmService } from '../../core/confirm.service';
       <div class="card empty">Loading topics…</div>
     }
 
-    @if (showCreate()) {
+    <div class="grid stats" style="margin-bottom:16px">
+      <div class="card stat clickable" [class.active]="health() === 'all'" (click)="setHealth('all')">
+        <div class="label">Topics</div>
+        <div class="value" [class.pending]="loading()">{{ loading() ? 'Fetching…' : summary().total.toLocaleString() }}</div>
+      </div>
+      <div
+        class="card stat clickable"
+        [class.active]="health() === 'healthy'"
+        [class.tone-ok]="summary().healthy > 0"
+        (click)="setHealth('healthy')"
+      >
+        <div class="label">Healthy</div>
+        <div class="value" [class.pending]="loading()">{{ loading() ? 'Fetching…' : summary().healthy.toLocaleString() }}</div>
+      </div>
+      <div
+        class="card stat clickable"
+        [class.active]="health() === 'under-replicated'"
+        [class.tone-err]="summary().underReplicated > 0"
+        (click)="setHealth('under-replicated')"
+      >
+        <div class="label">Under-replicated</div>
+        <div class="value" [class.pending]="loading()">{{ loading() ? 'Fetching…' : summary().underReplicated.toLocaleString() }}</div>
+        <div class="hint">ISR smaller than RF</div>
+      </div>
+      <div
+        class="card stat clickable"
+        [class.active]="health() === 'offline'"
+        [class.tone-err]="summary().offline > 0"
+        (click)="setHealth('offline')"
+      >
+        <div class="label">Offline</div>
+        <div class="value" [class.pending]="loading()">{{ loading() ? 'Fetching…' : summary().offline.toLocaleString() }}</div>
+        <div class="hint">No leader or offline replicas</div>
+      </div>
+    </div>
+
+    @if (showCreate() && !flags.disableDestructive()) {
       <form class="card" style="margin-bottom:16px" (ngSubmit)="create()">
         <div class="grid stats">
           <label><span>Name</span><input name="name" [(ngModel)]="newName" required /></label>
@@ -50,7 +90,7 @@ import { ConfirmService } from '../../core/confirm.service';
     <div class="toolbar">
       <label>
         <span>Filter</span>
-        <input [ngModel]="query()" (ngModelChange)="query.set($event)" name="q" placeholder="orders, payments…" />
+        <input [ngModel]="query()" (ngModelChange)="setQuery($event)" name="q" placeholder="orders, payments…" />
       </label>
       <span class="help">{{ filtered().length }} shown</span>
     </div>
@@ -100,6 +140,7 @@ import { ConfirmService } from '../../core/confirm.service';
 export class TopicsPage {
   private readonly api = inject(ApiService);
   private readonly confirm = inject(ConfirmService);
+  readonly flags = inject(FlagsService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   readonly id = toSignal(
@@ -111,10 +152,44 @@ export class TopicsPage {
   readonly loading = signal(false);
   readonly statsLoading = signal(false);
   readonly showCreate = signal(false);
-  readonly query = signal('');
+  private readonly queryParams = toSignal(this.route.queryParamMap, {
+    initialValue: this.route.snapshot.queryParamMap,
+  });
+  readonly query = computed(() => this.queryParams().get('filter') ?? '');
+  readonly health = signal<'all' | 'healthy' | 'under-replicated' | 'offline'>('all');
+  readonly summary = computed(() => {
+    let healthy = 0;
+    let underReplicated = 0;
+    let offline = 0;
+    for (const topic of this.topics()) {
+      if (topic.offlinePartitions) {
+        offline += 1;
+      } else if (topic.underReplicated) {
+        underReplicated += 1;
+      } else {
+        healthy += 1;
+      }
+    }
+    return { total: this.topics().length, healthy, underReplicated, offline };
+  });
   readonly filtered = computed(() => {
     const q = this.query().toLowerCase();
-    return this.topics().filter((topic) => topic.name.toLowerCase().includes(q));
+    const health = this.health();
+    return this.topics().filter((topic) => {
+      if (q && !topic.name.toLowerCase().includes(q)) {
+        return false;
+      }
+      if (health === 'offline') {
+        return Boolean(topic.offlinePartitions);
+      }
+      if (health === 'under-replicated') {
+        return !topic.offlinePartitions && topic.underReplicated;
+      }
+      if (health === 'healthy') {
+        return !topic.offlinePartitions && !topic.underReplicated;
+      }
+      return true;
+    });
   });
   newName = '';
   newPartitions = 3;
@@ -124,8 +199,16 @@ export class TopicsPage {
     this.load();
   }
 
+  setQuery(value: string) {
+    persistListFilter(this.router, this.route, value);
+  }
+
+  setHealth(next: 'all' | 'healthy' | 'under-replicated' | 'offline') {
+    this.health.update((current) => (next === 'all' || current === next ? 'all' : next));
+  }
+
   open(name: string) {
-    void this.router.navigate(['/c', this.id(), 'topics', name]);
+    void this.router.navigate(['/c', this.id(), 'topics', name], listFilterNavExtras(this.query()));
   }
 
   formatCount(value: number | undefined): string {

@@ -19,21 +19,18 @@ export class RequestLogInterceptor implements NestInterceptor {
     }
     const started = Date.now();
     const clusterId = this.clusterIdFrom(req.originalUrl);
-    this.activity.info('HTTP', `→ ${req.method} ${req.originalUrl}`, clusterId);
+    const label = `${req.method} ${req.originalUrl}`;
+    const pending = this.activity.begin('HTTP', label, clusterId);
     return next.handle().pipe(
       tap(() =>
-        this.activity.info(
-          'HTTP',
-          `← ${req.method} ${req.originalUrl} ${Date.now() - started}ms`,
-          clusterId,
-        ),
+        this.activity.finish(pending.id, 'ok', `${label} ${Date.now() - started}ms`),
       ),
       catchError((error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
-        this.activity.error(
-          'HTTP',
-          `← ${req.method} ${req.originalUrl} failed after ${Date.now() - started}ms: ${message}`,
-          clusterId,
+        this.activity.finish(
+          pending.id,
+          'error',
+          `${label} failed after ${Date.now() - started}ms: ${message}`,
         );
         return throwError(() => error);
       }),

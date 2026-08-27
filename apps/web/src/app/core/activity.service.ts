@@ -63,8 +63,11 @@ export class ActivityFeedService {
       try {
         const event = JSON.parse(message.data) as ActivityEvent;
         this.events.update((list) => {
-          if (list.some((item) => item.id === event.id)) {
-            return list;
+          const index = list.findIndex((item) => item.id === event.id);
+          if (index >= 0) {
+            const next = list.slice();
+            next[index] = event;
+            return next;
           }
           return [...list, event].slice(-250);
         });

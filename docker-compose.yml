@@ -25,6 +25,22 @@ services:
       - kafka_data:/var/lib/kafka/data
     restart: unless-stopped
 
+  postgres:
+    image: postgres:16-alpine
+    container_name: kafsheesh-postgres
+    environment:
+      POSTGRES_USER: kafsheesh
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kafsheesh}
+      POSTGRES_DB: kafsheesh
+    volumes:
+      - kafsheesh_pg:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kafsheesh -d kafsheesh"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   api:
     build:
       context: .
@@ -42,10 +58,14 @@ services:
       KAFSHEESH_MASTER_KEY: ${KAFSHEESH_MASTER_KEY:-change-me-in-production}
       KAFSHEESH_TLS_REJECT_UNAUTHORIZED: ${KAFSHEESH_TLS_REJECT_UNAUTHORIZED:-true}
       KAFSHEESH_DISABLE_DESTRUCTIVE: ${KAFSHEESH_DISABLE_DESTRUCTIVE:-true}
+      DATABASE_URL: postgres://kafsheesh:${POSTGRES_PASSWORD:-kafsheesh}@postgres:5432/kafsheesh
     volumes:
       - kafsheesh_data:/data
     depends_on:
-      - kafka
+      kafka:
+        condition: service_started
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4000/api/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
@@ -69,3 +89,4 @@ services:
 volumes:
   kafka_data:
   kafsheesh_data:
+  kafsheesh_pg:

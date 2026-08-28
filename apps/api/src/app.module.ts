@@ -13,7 +13,9 @@ import {
 } from './clusters/clusters.controller';
 import { ClustersService } from './clusters/clusters.service';
 import { KafkaManagerService } from './kafka/kafka-manager.service';
+import { AppStore, databaseUrl } from './store/app-store';
 import { JsonStoreService } from './store/json-store.service';
+import { PgStoreService } from './store/pg-store.service';
 import { SshTunnelService } from './tunnel/ssh-tunnel.service';
 
 @Module({
@@ -27,7 +29,10 @@ import { SshTunnelService } from './tunnel/ssh-tunnel.service';
   ],
   providers: [
     AppService,
-    JsonStoreService,
+    {
+      provide: AppStore,
+      useClass: databaseUrl() ? PgStoreService : JsonStoreService,
+    },
     AuditService,
     ActivityService,
     SshTunnelService,

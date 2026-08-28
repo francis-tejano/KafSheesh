@@ -186,7 +186,7 @@ kafsheesh/
 ├── README.md               This file
 ├── package.json            Workspace scripts; license GPL-3.0-or-later
 ├── pnpm-workspace.yaml
-├── docker-compose.yml      Packaged UI + API + Kafka
+├── docker-compose.yml      Packaged UI + API + Kafka + Postgres
 ├── Dockerfile              Multi-stage api / web images
 ├── .env.example
 ├── apps/api/               NestJS API (prefix /api, default port 4000)
@@ -195,7 +195,7 @@ kafsheesh/
 │       ├── audit/          Mutating-action log
 │       ├── clusters/       CRUD, connect, diagnose
 │       ├── kafka/          Admin, browse, produce, groups, schemas
-│       ├── store/          JSON files under KAFSHEESH_DATA_DIR
+│       ├── store/          JSON files or Postgres (DATABASE_URL)
 │       ├── tunnel/         SSH sessions, forwards, PEM/PPK
 │       └── common/         AES-256-GCM seal/open, HTTP errors
 ├── apps/web/               Angular UI (dev server :4200, proxies /api → :4000)
@@ -330,13 +330,15 @@ Copy `.env.example` to `.env` to override defaults, or export the same names in 
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `PORT` | `4000` | HTTP port for the NestJS API |
-| `KAFSHEESH_DATA_DIR` | `./apps/api/data` when started from that package, else `./data` | Directory for `clusters.json`, searches, audit |
+| `KAFSHEESH_DATA_DIR` | `./apps/api/data` when started from that package, else `./data` | JSON fallback directory; also the source for a one-time import into Postgres |
 | `KAFSHEESH_MASTER_KEY` | unset | If set, SHA-256 of this string is the AES-256-GCM key for SSH/SASL/registry secrets |
 | `KAFSHEESH_TLS_REJECT_UNAUTHORIZED` | `true` | Set `false` only in development if Kafka uses a private CA you have not installed |
 | `KAFSHEESH_WEB_PORT` | `4444` | Host port for the Compose UI (nginx) |
 | `KAFSHEESH_COMPOSE_KAFKA_HOST` | unset | If set (Compose uses `kafka`), rewrite `localhost` / `127.0.0.1` brokers to that hostname |
 | `KAFSHEESH_DISABLE_DESTRUCTIVE` | `false` in a bare API process; `true` in `.env.example` (used by Compose / `docker run` when `.env` is absent) | Set `true` / `1` / `yes` / `on` to block create/delete topic, produce, offset reset, delete group, schema register/delete, and delete cluster. Browse, connect, and cluster edit stay available. The API enforces this; the UI hides those actions. |
 | `CORS_ORIGIN` | empty | Extra comma-separated browser origins allowed by the API |
+| `DATABASE_URL` | unset | When set, clusters, searches, audit, and DNS cache live in Postgres. Compose sets this to the bundled `postgres` service. |
+| `POSTGRES_PASSWORD` | `kafsheesh` | Password for the Compose Postgres user |
 
 Compose serves the UI and `/api` from the same origin, so CORS is unused in that mode. For `pnpm dev`, the allow-list includes localhost `:4200` and `:4444`.
 
@@ -344,11 +346,11 @@ Compose serves the UI and `/api` from the same origin, so CORS is unused in that
 
 ## Data, secrets, and encryption
 
-The API is the system of record. It writes JSON files under `KAFSHEESH_DATA_DIR` (see `JsonStoreService`). Typical files:
+The API is the system of record.
 
-- Cluster definitions (brokers, tunnel, SASL, schema registry URL)
-- Saved message searches
-- Audit events
+**Postgres (Compose default).** When `DATABASE_URL` is set, records live in four tables: `clusters` (full config as JSONB, secrets still `enc:v1:`), `saved_searches`, `audit_events`, and `kv_documents` (DNS cache). Schema is created on API boot. If Postgres is empty and JSON files exist under `KAFSHEESH_DATA_DIR`, they are imported once. The Compose database is not published on the host; the API reaches it as `postgres:5432` on the Docker network.
+
+**JSON fallback.** When `DATABASE_URL` is unset (`pnpm dev`), `JsonStoreService` writes `clusters.json`, `searches.json`, `audit.json`, and `dns-cache.json` under `KAFSHEESH_DATA_DIR`.
 
 When `KAFSHEESH_MASTER_KEY` is set, passwords, private keys, and passphrases are sealed as `enc:v1:<iv>.<tag>.<ciphertext>` (AES-256-GCM). The UI receives redacted `••••` placeholders on read; submitting `••••` on edit keeps the stored secret.
 
@@ -442,10 +444,10 @@ Do not add `ppk-to-openssh` (GPL-3, and a previous approach hung the product on 
 
 ## Production notes
 
-1. Set a long random `KAFSHEESH_MASTER_KEY` and keep it with the `kafsheesh_data` volume.
-2. `docker compose up --build -d` is the packaged run: nginx serves the UI and proxies `/api` to the API. Cluster state lives in `kafsheesh_data`.
+1. Set a long random `KAFSHEESH_MASTER_KEY` and keep it with the `kafsheesh_pg` volume (and `kafsheesh_data` if you still have JSON).
+2. `docker compose up --build -d` is the packaged run: nginx serves the UI and proxies `/api` to the API. Cluster state lives in Postgres (`kafsheesh_pg`). Existing JSON under `kafsheesh_data` is imported on first boot.
 3. Put TLS and authentication on a reverse proxy you control in front of port 4444 (this app has no built-in user login).
-4. If you run the API without Compose, point `KAFSHEESH_DATA_DIR` at a persistent disk and run `node apps/api/dist/main.js`.
+4. If you run the API without Compose, either set `DATABASE_URL` or point `KAFSHEESH_DATA_DIR` at a persistent disk and run `node apps/api/dist/main.js`.
 5. If you distribute a container image or binary of Kafsheesh, include `LICENSE`, this README, and a way to obtain this source tree (GPL-3 §6).
 
 Example written offer (when you ship object code without the full tree on the same medium):

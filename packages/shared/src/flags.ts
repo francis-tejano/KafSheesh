@@ -8,4 +8,6 @@ export interface HealthInfo {
   status: string;
   time: string;
   flags: AppFlags;
+  /** Where cluster, search, audit, and DNS cache records live. */
+  store?: 'json' | 'postgres';
 }

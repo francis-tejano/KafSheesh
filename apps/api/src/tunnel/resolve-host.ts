@@ -4,6 +4,12 @@ import { lookup } from 'dns/promises';
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import { dirname, join } from 'path';
 import { promisify } from 'util';
+import type { AppStore } from '../store/app-store';
+import {
+  DNS_FILE,
+  emptyDnsCache,
+  type DnsCacheDocument,
+} from '../store/store-documents';
 
 const execFileAsync = promisify(execFile);
 const memory = new Map<string, { address: string; at: number }>();
@@ -232,25 +238,33 @@ async function tryHostsFile(name: string): Promise<ResolvedHost | undefined> {
   return undefined;
 }
 
+let cacheStore: Pick<AppStore, 'read' | 'write'> | undefined;
+
+export function bindDnsCacheStore(store: Pick<AppStore, 'read' | 'write'>) {
+  cacheStore = store;
+}
+
 function cachePath(): string {
   const root = process.env.KAFSHEESH_DATA_DIR ?? join(process.cwd(), 'data');
-  return join(root, 'dns-cache.json');
+  return join(root, DNS_FILE);
 }
 
-interface DiskCache {
-  nameservers: string[];
-  hosts: Record<string, { address: string; at: string }>;
-}
-
-async function readDisk(): Promise<DiskCache> {
+async function readDisk(): Promise<DnsCacheDocument> {
+  if (cacheStore) {
+    return cacheStore.read(DNS_FILE, emptyDnsCache());
+  }
   try {
-    return JSON.parse(await readFile(cachePath(), 'utf8')) as DiskCache;
+    return JSON.parse(await readFile(cachePath(), 'utf8')) as DnsCacheDocument;
   } catch {
-    return { nameservers: [], hosts: {} };
+    return emptyDnsCache();
   }
 }
 
-async function writeDisk(cache: DiskCache): Promise<void> {
+async function writeDisk(cache: DnsCacheDocument): Promise<void> {
+  if (cacheStore) {
+    await cacheStore.write(DNS_FILE, cache);
+    return;
+  }
   const path = cachePath();
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, JSON.stringify(cache, null, 2), 'utf8');

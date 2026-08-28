@@ -12,7 +12,7 @@ import { ActivityService } from '../activity/activity.service';
 import { AuditService } from '../audit/audit.service';
 import { open, seal } from '../common/crypto';
 import { KafkaManagerService } from '../kafka/kafka-manager.service';
-import { JsonStoreService } from '../store/json-store.service';
+import { AppStore } from '../store/app-store';
 
 function redact(cluster: ClusterConfig): ClusterConfig {
   const copy: ClusterConfig = structuredClone(cluster);
@@ -127,7 +127,7 @@ export class ClustersService {
   private readonly logger = new Logger(ClustersService.name);
 
   constructor(
-    private readonly store: JsonStoreService,
+    private readonly store: AppStore,
     private readonly kafka: KafkaManagerService,
     private readonly audit: AuditService,
     private readonly activity: ActivityService,

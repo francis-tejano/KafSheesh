@@ -1,14 +1,18 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import { dirname, join } from 'path';
+import { bindDnsCacheStore } from '../tunnel/resolve-host';
+import { AppStore } from './app-store';
 
 @Injectable()
-export class JsonStoreService implements OnModuleInit {
+export class JsonStoreService extends AppStore implements OnModuleInit {
+  readonly kind = 'json' as const;
   private readonly root =
     process.env.KAFSHEESH_DATA_DIR ?? join(process.cwd(), 'data');
 
   async onModuleInit() {
     await mkdir(this.root, { recursive: true });
+    bindDnsCacheStore(this);
   }
 
   async read<T>(name: string, fallback: T): Promise<T> {

@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import type { AuditAction, AuditEvent } from '@kafsheesh/shared';
-import { JsonStoreService } from '../store/json-store.service';
+import { AppStore } from '../store/app-store';
 
 @Injectable()
 export class AuditService {
-  constructor(private readonly store: JsonStoreService) {}
+  constructor(private readonly store: AppStore) {}
 
   async list(clusterId?: string): Promise<AuditEvent[]> {
     const events = await this.store.read<AuditEvent[]>('audit.json', []);
